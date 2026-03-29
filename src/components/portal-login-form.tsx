@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 type Portal = "client" | "admin";
 
@@ -15,7 +14,6 @@ export function PortalLoginForm({
   initialPortal = "client",
   lockPortal = false,
 }: PortalLoginFormProps) {
-  const router = useRouter();
   const [portal, setPortal] = useState<Portal>(initialPortal);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -49,8 +47,9 @@ export function PortalLoginForm({
         return;
       }
 
-      router.push(portal === "admin" ? "/admin/dashboard" : "/client/dashboard");
-      router.refresh();
+      const targetPath = portal === "admin" ? "/admin/dashboard" : "/client/dashboard";
+      window.location.assign(targetPath);
+      return;
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -85,8 +84,8 @@ export function PortalLoginForm({
         return;
       }
 
-      router.push("/client/dashboard");
-      router.refresh();
+      window.location.assign("/client/dashboard");
+      return;
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

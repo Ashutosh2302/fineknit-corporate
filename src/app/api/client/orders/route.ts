@@ -4,6 +4,9 @@ import { requireRole } from "@/lib/api-auth";
 import { ClientOrderModel } from "@/models/ClientOrder";
 import "@/models/ClientSku";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   const auth = requireRole(request, "client");
   if (auth instanceof NextResponse) return auth;
@@ -18,5 +21,12 @@ export async function GET(request: NextRequest) {
     .sort({ deliveryDate: -1, createdAt: -1 })
     .lean();
 
-  return NextResponse.json({ orders: rows });
+  return NextResponse.json(
+    { orders: rows },
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    }
+  );
 }

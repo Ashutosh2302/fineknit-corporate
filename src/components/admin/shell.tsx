@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
 
 type AdminShellProps = {
@@ -17,6 +20,8 @@ const links = [
 ];
 
 export function AdminShell({ title, subtitle, adminEmail, adminType, children }: AdminShellProps) {
+  const pathname = usePathname();
+
   return (
     <main
       className="admin-light mx-auto w-full max-w-7xl flex-1 rounded-3xl bg-[#f2eee7]/95 px-6 py-8 text-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
@@ -35,15 +40,24 @@ export function AdminShell({ title, subtitle, adminEmail, adminType, children }:
         </div>
 
         <nav className="mt-4 flex flex-wrap gap-2">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-sm text-slate-700 transition hover:bg-[#f2ede5]"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {links.map((link) => {
+            const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                prefetch
+                aria-current={isActive ? "page" : undefined}
+                className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                  isActive
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-[#ddd4c7] bg-[#faf8f4] text-slate-700 hover:bg-[#f2ede5]"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
       </header>
 

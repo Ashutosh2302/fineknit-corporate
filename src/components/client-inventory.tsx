@@ -29,7 +29,10 @@ export function ClientInventory() {
 
   useEffect(() => {
     const load = async () => {
-      const response = await fetch("/api/client/inventory");
+      const response = await fetch("/api/client/inventory", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       const data = await response.json();
       if (!response.ok) {
         showToast({ message: data.error ?? "Failed to load inventory.", type: "error" });
@@ -74,7 +77,10 @@ export function ClientInventory() {
         [inventoryId]: { employeeName: "", employeeId: "", quantity: 1 },
       }));
 
-      const invRes = await fetch("/api/client/inventory");
+      const invRes = await fetch("/api/client/inventory", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       const invData = await invRes.json();
       if (invRes.ok) {
         setInventory(invData.inventory ?? []);

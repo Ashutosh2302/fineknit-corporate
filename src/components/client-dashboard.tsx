@@ -30,7 +30,10 @@ export function ClientDashboard() {
 
   useEffect(() => {
     const load = async () => {
-      const [invRes, ordRes] = await Promise.all([fetch("/api/client/inventory"), fetch("/api/client/orders")]);
+      const [invRes, ordRes] = await Promise.all([
+        fetch("/api/client/inventory", { cache: "no-store", credentials: "same-origin" }),
+        fetch("/api/client/orders", { cache: "no-store", credentials: "same-origin" }),
+      ]);
       const invData = await invRes.json();
       const ordData = await ordRes.json();
 

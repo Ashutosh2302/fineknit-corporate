@@ -6,6 +6,9 @@ import { InventoryModel } from "@/models/Inventory";
 import { UsedInventoryModel } from "@/models/UsedInventory";
 import "@/models/ClientSku";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ inventoryId: string }> }
@@ -29,21 +32,28 @@ export async function GET(
 
   const rows = await UsedInventoryModel.find({ inventoryId }).sort({ createdAt: -1 }).lean();
 
-  return NextResponse.json({
-    inventory: {
-      id: inventory._id,
-      totalQuantity: inventory.totalQuantity,
-      usedQuantity: inventory.usedQuantity,
-      availableQuantity: inventory.totalQuantity - inventory.usedQuantity,
-      sku: inventory.skuId,
+  return NextResponse.json(
+    {
+      inventory: {
+        id: inventory._id,
+        totalQuantity: inventory.totalQuantity,
+        usedQuantity: inventory.usedQuantity,
+        availableQuantity: inventory.totalQuantity - inventory.usedQuantity,
+        sku: inventory.skuId,
+      },
+      distributed: rows.map((row) => ({
+        id: row._id,
+        employeeName: row.employeeName,
+        employeeId: row.employeeId,
+        quantity: row.quantity,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      })),
     },
-    distributed: rows.map((row) => ({
-      id: row._id,
-      employeeName: row.employeeName,
-      employeeId: row.employeeId,
-      quantity: row.quantity,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    })),
-  });
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    }
+  );
 }

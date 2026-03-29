@@ -51,6 +51,20 @@ type GroupedOrder = {
   deliveryDate: string | null;
 };
 
+type ToastType = "success" | "error";
+
+type ToastItem = {
+  id: string;
+  message: string;
+  type: ToastType;
+};
+
+type PreviewAsset = {
+  url: string;
+  title: string;
+  type: "image" | "pdf" | "other";
+};
+
 const inputClass =
   "w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
 
@@ -67,6 +81,8 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [deliveryDateByOrder, setDeliveryDateByOrder] = useState<Record<string, string>>({});
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [previewAsset, setPreviewAsset] = useState<PreviewAsset | null>(null);
   const [payload, setPayload] = useState({
     delivered: false,
     deliveryDate: "",
@@ -108,6 +124,24 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
       };
     });
   }, [orders]);
+
+  const showToast = (message: string, type: ToastType) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 3500);
+  };
+
+  const openPreview = (url: string, title: string) => {
+    const lower = url.toLowerCase();
+    const type: PreviewAsset["type"] = lower.includes(".pdf")
+      ? "pdf"
+      : /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|#|$)/.test(lower)
+        ? "image"
+        : "other";
+    setPreviewAsset({ url, title, type });
+  };
 
   const loadForClient = async (clientId: string) => {
     if (!clientId) {
@@ -203,7 +237,7 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
   const updateOrderDelivery = async (orderCode: string, action: "deliver" | "undo") => {
     const enteredDeliveryDate = deliveryDateByOrder[orderCode];
     if (action === "deliver" && !enteredDeliveryDate) {
-      setStatus("Please select delivery date before marking order as delivered.");
+      showToast("Please select delivery date before marking order as delivered.", "error");
       return;
     }
 
@@ -222,11 +256,11 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
 
       const data = await response.json();
       if (!response.ok) {
-        setStatus(data.error ?? "Failed to update order delivery status");
+        showToast(data.error ?? "Failed to update order delivery status", "error");
         return;
       }
 
-      setStatus(data.message ?? "Order delivery status updated.");
+      showToast(data.message ?? "Order delivery status updated.", "success");
       if (action === "deliver") {
         setDeliveryDateByOrder((prev) => ({ ...prev, [orderCode]: "" }));
       }
@@ -238,6 +272,30 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
 
   return (
     <div className="space-y-6">
+      <div className="pointer-events-none fixed right-4 top-4 z-[70] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto rounded-xl border px-3 py-2 text-sm shadow-lg ${
+              toast.type === "error"
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p>{toast.message}</p>
+              <button
+                type="button"
+                onClick={() => setToasts((prev) => prev.filter((item) => item.id !== toast.id))}
+                className="text-xs font-medium opacity-70 hover:opacity-100"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <section className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5">
         <h2 className="text-lg font-semibold tracking-tight">Create Order</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -436,14 +494,13 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                       </td>
                       <td className="px-3 py-2 text-nowrap">
                         {order.invoiceUrl ? (
-                          <a
-                            href={order.invoiceUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => openPreview(order.invoiceUrl, `${order.orderCode} invoice`)}
                             className="text-xs underline"
                           >
                             View Invoice
-                          </a>
+                          </button>
                         ) : (
                           "-"
                         )}
@@ -536,14 +593,15 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                                 alt={`${item.skuId?.name ?? "SKU"} preview`}
                                 className="h-8 w-8 shrink-0 rounded border border-[#ddd4c7] object-cover"
                               />
-                              <a
-                                href={item.skuId.imageUrl}
-                                target="_blank"
-                                rel="noreferrer"
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openPreview(item.skuId?.imageUrl ?? "", `${item.skuId?.name ?? "SKU"} image`)
+                                }
                                 className="truncate underline"
                               >
                                 View
-                              </a>
+                              </button>
                             </div>
                           ) : (
                             "-"
@@ -569,6 +627,51 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
           ) : null}
         </div>
       </section>
+
+      {previewAsset ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreviewAsset(null)}
+        >
+          <div
+            className="w-full max-w-5xl rounded-2xl border border-[#e8e1d6] bg-[#fdfbf8] p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-medium text-slate-800">{previewAsset.title}</p>
+              <button
+                type="button"
+                onClick={() => setPreviewAsset(null)}
+                className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-[#f2ede5]"
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-[75vh] overflow-auto rounded-xl border border-[#e6ddd0] bg-[#faf8f4] p-2">
+              {previewAsset.type === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewAsset.url}
+                  alt={previewAsset.title}
+                  className="mx-auto h-auto max-w-full rounded-lg"
+                />
+              ) : previewAsset.type === "pdf" ? (
+                <iframe title={previewAsset.title} src={previewAsset.url} className="h-[70vh] w-full rounded-lg" />
+              ) : (
+                <div className="p-4 text-sm text-slate-700">
+                  Preview is not supported for this file type.{" "}
+                  <a href={previewAsset.url} target="_blank" rel="noreferrer" className="underline">
+                    Open file
+                  </a>
+                  .
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

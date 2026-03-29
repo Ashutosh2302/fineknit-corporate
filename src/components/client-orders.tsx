@@ -26,7 +26,10 @@ export function ClientOrders() {
 
   useEffect(() => {
     const load = async () => {
-      const response = await fetch("/api/client/orders");
+      const response = await fetch("/api/client/orders", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       const data = await response.json();
       if (!response.ok) {
         showToast({ message: data.error ?? "Failed to load orders.", type: "error" });
