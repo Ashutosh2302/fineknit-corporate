@@ -120,7 +120,7 @@ export function PortalLoginForm({
           </div>
         ) : (
           <div className="rounded-xl border border-[#ddd4c7] bg-[#faf8f4] px-3 py-2 text-sm text-slate-700">
-            <span className="font-medium">Client Portal</span>
+            <span className="font-medium">{portal === "admin" ? "Admin Portal" : "Client Portal"}</span>
           </div>
         )}
 
