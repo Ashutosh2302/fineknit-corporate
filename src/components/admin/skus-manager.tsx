@@ -27,6 +27,8 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
   const [selectedClientId, setSelectedClientId] = useState(initialClients[0]?.id ?? "");
   const [skus, setSkus] = useState<Sku[]>(initialSkus);
   const [status, setStatus] = useState("");
+  const [loadingSkus, setLoadingSkus] = useState(false);
+  const [creatingSku, setCreatingSku] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", imageUrl: "" });
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -37,59 +39,73 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
       return;
     }
 
-    const response = await fetch(`/api/admin/skus?clientId=${clientId}`);
-    const data = await response.json();
-    if (response.ok) {
-      setSkus(data.skus ?? []);
+    setLoadingSkus(true);
+    try {
+      const response = await fetch(`/api/admin/skus?clientId=${clientId}`);
+      const data = await response.json();
+      if (response.ok) {
+        setSkus(data.skus ?? []);
+      }
+    } finally {
+      setLoadingSkus(false);
     }
   };
 
   const createSku = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setStatus("");
+    setCreatingSku(true);
 
     if (!selectedClientId) {
       setStatus("Select a client first.");
+      setCreatingSku(false);
       return;
     }
 
-    let imageUrl = form.imageUrl;
-    if (imageFile) {
-      setUploading(true);
-      const uploadFormData = new FormData();
-      uploadFormData.append("folder", "skus");
-      uploadFormData.append("file", imageFile);
-      const uploadResponse = await fetch("/api/admin/upload", {
-        method: "POST",
-        body: uploadFormData,
-      });
-      const uploadData = await uploadResponse.json();
-      setUploading(false);
+    try {
+      let imageUrl = form.imageUrl;
+      if (imageFile) {
+        setUploading(true);
+        const uploadFormData = new FormData();
+        uploadFormData.append("folder", "skus");
+        uploadFormData.append("file", imageFile);
+        const uploadResponse = await fetch("/api/admin/upload", {
+          method: "POST",
+          body: uploadFormData,
+        });
+        const uploadData = await uploadResponse.json();
+        setUploading(false);
 
-      if (!uploadResponse.ok) {
-        setStatus(uploadData.error ?? "Failed to upload image");
+        if (!uploadResponse.ok) {
+          setStatus(uploadData.error ?? "Failed to upload image");
+          return;
+        }
+
+        imageUrl = uploadData.url;
+      }
+
+      const response = await fetch("/api/admin/skus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, imageUrl, clientId: selectedClientId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setStatus(data.error ?? "Failed to create SKU");
         return;
       }
 
-      imageUrl = uploadData.url;
+      setStatus("SKU created successfully.");
+      setForm({ name: "", description: "", imageUrl: "" });
+      setImageFile(null);
+      await loadSkus(selectedClientId);
+    } catch {
+      setStatus("Unable to create SKU right now.");
+    } finally {
+      setUploading(false);
+      setCreatingSku(false);
     }
-
-    const response = await fetch("/api/admin/skus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, imageUrl, clientId: selectedClientId }),
-    });
-    const data = await response.json();
-
-    if (!response.ok) {
-      setStatus(data.error ?? "Failed to create SKU");
-      return;
-    }
-
-    setStatus("SKU created successfully.");
-    setForm({ name: "", description: "", imageUrl: "" });
-    setImageFile(null);
-    await loadSkus(selectedClientId);
   };
 
   return (
@@ -107,6 +123,7 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
               setSelectedClientId(id);
               await loadSkus(id);
             }}
+            disabled={loadingSkus || creatingSku}
             className={inputClass}
           >
             <option value="">Choose a client</option>
@@ -153,8 +170,11 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
             </p>
           </div>
 
-          <button className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
-            {uploading ? "Uploading..." : "Create SKU"}
+          <button
+            disabled={creatingSku || loadingSkus}
+            className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {uploading ? "Uploading..." : creatingSku ? "Creating..." : "Create SKU"}
           </button>
         </form>
 

@@ -16,7 +16,6 @@ if (!global.mongooseCache) {
 
 export async function connectToDatabase() {
   const mongoUri = process.env.MONGODB_URI;
-  console.log("MONGO URI:", process.env.MONGODB_URI);
   if (!mongoUri) {
     throw new Error("Missing MONGODB_URI environment variable");
   }

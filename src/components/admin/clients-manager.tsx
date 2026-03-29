@@ -20,6 +20,7 @@ const inputClass =
 export function AdminClientsManager({ initialClients }: Props) {
   const [clients, setClients] = useState<Client[]>(initialClients);
   const [status, setStatus] = useState("");
+  const [creatingClient, setCreatingClient] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [form, setForm] = useState({
@@ -34,28 +35,35 @@ export function AdminClientsManager({ initialClients }: Props) {
     setStatus("");
     setGeneratedPassword("");
     setCopyStatus("");
+    setCreatingClient(true);
 
-    const response = await fetch("/api/admin/clients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    try {
+      const response = await fetch("/api/admin/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      setStatus(data.error ?? "Failed to create client");
-      return;
-    }
+      if (!response.ok) {
+        setStatus(data.error ?? "Failed to create client");
+        return;
+      }
 
-    setStatus("Client created successfully.");
-    setGeneratedPassword(data.initialPassword ?? "");
-    setForm({ name: "", email: "", phoneNumber: "", address: "" });
+      setStatus("Client created successfully.");
+      setGeneratedPassword(data.initialPassword ?? "");
+      setForm({ name: "", email: "", phoneNumber: "", address: "" });
 
-    const listResponse = await fetch("/api/admin/clients");
-    const listData = await listResponse.json();
-    if (listResponse.ok) {
-      setClients(listData.clients ?? []);
+      const listResponse = await fetch("/api/admin/clients");
+      const listData = await listResponse.json();
+      if (listResponse.ok) {
+        setClients(listData.clients ?? []);
+      }
+    } catch {
+      setStatus("Unable to create client right now.");
+    } finally {
+      setCreatingClient(false);
     }
   };
 
@@ -123,8 +131,11 @@ export function AdminClientsManager({ initialClients }: Props) {
             />
           </div>
 
-          <button className="w-fit rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
-            Create Client
+          <button
+            disabled={creatingClient}
+            className="w-fit rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {creatingClient ? "Creating..." : "Create Client"}
           </button>
         </form>
 

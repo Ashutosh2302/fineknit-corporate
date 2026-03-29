@@ -61,6 +61,9 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
   const [skus, setSkus] = useState<Sku[]>(initialSkus);
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
   const [status, setStatus] = useState("");
+  const [loadingClientData, setLoadingClientData] = useState(false);
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [updatingOrderCode, setUpdatingOrderCode] = useState<string | null>(null);
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [deliveryDateByOrder, setDeliveryDateByOrder] = useState<Record<string, string>>({});
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
@@ -113,74 +116,88 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
       return;
     }
 
-    const [skusResponse, ordersResponse] = await Promise.all([
-      fetch(`/api/admin/skus?clientId=${clientId}`),
-      fetch(`/api/admin/orders?clientId=${clientId}`),
-    ]);
+    setLoadingClientData(true);
+    try {
+      const [skusResponse, ordersResponse] = await Promise.all([
+        fetch(`/api/admin/skus?clientId=${clientId}`),
+        fetch(`/api/admin/orders?clientId=${clientId}`),
+      ]);
 
-    const skusData = await skusResponse.json();
-    const ordersData = await ordersResponse.json();
+      const skusData = await skusResponse.json();
+      const ordersData = await ordersResponse.json();
 
-    if (skusResponse.ok) setSkus(skusData.skus ?? []);
-    if (ordersResponse.ok) setOrders(ordersData.orders ?? []);
+      if (skusResponse.ok) setSkus(skusData.skus ?? []);
+      if (ordersResponse.ok) setOrders(ordersData.orders ?? []);
+    } finally {
+      setLoadingClientData(false);
+    }
   };
 
   const createOrder = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setStatus("");
+    setCreatingOrder(true);
 
     if (!selectedClientId) {
       setStatus("Select a client first.");
+      setCreatingOrder(false);
       return;
     }
 
     if (payload.items.some((item) => !item.skuId)) {
       setStatus("Please select SKU for every line item.");
+      setCreatingOrder(false);
       return;
     }
+    try {
+      let invoiceUrl = "";
+      if (invoiceFile) {
+        setUploadingInvoice(true);
+        const uploadFormData = new FormData();
+        uploadFormData.append("folder", "invoices");
+        uploadFormData.append("file", invoiceFile);
+        const uploadResponse = await fetch("/api/admin/upload", {
+          method: "POST",
+          body: uploadFormData,
+        });
+        const uploadData = await uploadResponse.json();
+        setUploadingInvoice(false);
 
-    let invoiceUrl = "";
-    if (invoiceFile) {
-      setUploadingInvoice(true);
-      const uploadFormData = new FormData();
-      uploadFormData.append("folder", "invoices");
-      uploadFormData.append("file", invoiceFile);
-      const uploadResponse = await fetch("/api/admin/upload", {
+        if (!uploadResponse.ok) {
+          setStatus(uploadData.error ?? "Failed to upload invoice");
+          return;
+        }
+        invoiceUrl = uploadData.url;
+      }
+
+      const response = await fetch("/api/admin/orders", {
         method: "POST",
-        body: uploadFormData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: selectedClientId,
+          invoiceUrl,
+          delivered: payload.delivered,
+          deliveryDate: payload.deliveryDate ? new Date(payload.deliveryDate).toISOString() : null,
+          items: payload.items,
+        }),
       });
-      const uploadData = await uploadResponse.json();
-      setUploadingInvoice(false);
 
-      if (!uploadResponse.ok) {
-        setStatus(uploadData.error ?? "Failed to upload invoice");
+      const data = await response.json();
+      if (!response.ok) {
+        setStatus(data.error ?? "Failed to create order");
         return;
       }
-      invoiceUrl = uploadData.url;
+
+      setStatus(`Order created: ${data.orderCode}`);
+      setInvoiceFile(null);
+      setPayload({ delivered: false, deliveryDate: "", items: [emptyItem()] });
+      await loadForClient(selectedClientId);
+    } catch {
+      setStatus("Unable to create order right now.");
+    } finally {
+      setUploadingInvoice(false);
+      setCreatingOrder(false);
     }
-
-    const response = await fetch("/api/admin/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId: selectedClientId,
-        invoiceUrl,
-        delivered: payload.delivered,
-        deliveryDate: payload.deliveryDate ? new Date(payload.deliveryDate).toISOString() : null,
-        items: payload.items,
-      }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      setStatus(data.error ?? "Failed to create order");
-      return;
-    }
-
-    setStatus(`Order created: ${data.orderCode}`);
-    setInvoiceFile(null);
-    setPayload({ delivered: false, deliveryDate: "", items: [emptyItem()] });
-    await loadForClient(selectedClientId);
   };
 
   const updateOrderDelivery = async (orderCode: string, action: "deliver" | "undo") => {
@@ -190,28 +207,33 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
       return;
     }
 
-    const response = await fetch("/api/admin/orders", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderCode,
-        action,
-        deliveryDate:
-          action === "deliver" ? new Date(enteredDeliveryDate).toISOString() : undefined,
-      }),
-    });
+    setUpdatingOrderCode(orderCode);
+    try {
+      const response = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderCode,
+          action,
+          deliveryDate:
+            action === "deliver" ? new Date(enteredDeliveryDate).toISOString() : undefined,
+        }),
+      });
 
-    const data = await response.json();
-    if (!response.ok) {
-      setStatus(data.error ?? "Failed to update order delivery status");
-      return;
-    }
+      const data = await response.json();
+      if (!response.ok) {
+        setStatus(data.error ?? "Failed to update order delivery status");
+        return;
+      }
 
-    setStatus(data.message ?? "Order delivery status updated.");
-    if (action === "deliver") {
-      setDeliveryDateByOrder((prev) => ({ ...prev, [orderCode]: "" }));
+      setStatus(data.message ?? "Order delivery status updated.");
+      if (action === "deliver") {
+        setDeliveryDateByOrder((prev) => ({ ...prev, [orderCode]: "" }));
+      }
+      await loadForClient(selectedClientId);
+    } finally {
+      setUpdatingOrderCode(null);
     }
-    await loadForClient(selectedClientId);
   };
 
   return (
@@ -231,6 +253,7 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
               setSelectedClientId(id);
               await loadForClient(id);
             }}
+            disabled={loadingClientData || creatingOrder}
             className={inputClass}
           >
             <option value="">Choose a client</option>
@@ -354,6 +377,7 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
             <button
               type="button"
               onClick={() => setPayload((prev) => ({ ...prev, items: [...prev.items, emptyItem()] }))}
+              disabled={creatingOrder || uploadingInvoice}
               className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-xs text-slate-700 hover:bg-[#f2ede5]"
             >
               Add SKU Line
@@ -366,12 +390,16 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                   items: prev.items.length > 1 ? prev.items.slice(0, -1) : prev.items,
                 }))
               }
+              disabled={creatingOrder || uploadingInvoice}
               className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-xs text-slate-700 hover:bg-[#f2ede5]"
             >
               Remove Last Line
             </button>
-            <button className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
-              {uploadingInvoice ? "Uploading Invoice..." : "Create Order"}
+            <button
+              disabled={creatingOrder || loadingClientData}
+              className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {uploadingInvoice ? "Uploading Invoice..." : creatingOrder ? "Creating Order..." : "Create Order"}
             </button>
           </div>
         </form>
@@ -440,23 +468,26 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                                   [order.orderCode]: e.target.value,
                                 }))
                               }
+                              disabled={updatingOrderCode === order.orderCode}
                               className="rounded-lg border border-[#ddd4c7] bg-[#fcfbf8] px-2 py-1 text-xs text-slate-700 outline-none focus:border-slate-500"
                             />
                             <button
                               type="button"
                               onClick={() => updateOrderDelivery(order.orderCode, "deliver")}
-                              className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5]"
+                              disabled={updatingOrderCode === order.orderCode}
+                              className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              Mark Delivered
+                              {updatingOrderCode === order.orderCode ? "Updating..." : "Mark Delivered"}
                             </button>
                           </div>
                         ) : (
                           <button
                             type="button"
                             onClick={() => updateOrderDelivery(order.orderCode, "undo")}
-                            className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5]"
+                            disabled={updatingOrderCode === order.orderCode}
+                            className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5] disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            Undo Delivered
+                            {updatingOrderCode === order.orderCode ? "Updating..." : "Undo Delivered"}
                           </button>
                         )}
                       </td>

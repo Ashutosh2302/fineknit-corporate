@@ -20,6 +20,7 @@ export function ClientInventory() {
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [previewImage, setPreviewImage] = useState<{ src: string; label: string } | null>(null);
   const [confirmInventoryId, setConfirmInventoryId] = useState<string | null>(null);
+  const [submittingInventoryId, setSubmittingInventoryId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [distributionForm, setDistributionForm] = useState<{
     [key: string]: { employeeName: string; employeeId: string; quantity: number };
@@ -53,30 +54,38 @@ export function ClientInventory() {
   const distribute = async (inventoryId: string) => {
     const payload = distributionForm[inventoryId];
     if (!payload) return;
-    const response = await fetch(`/api/client/inventory/${inventoryId}/distribute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await response.json();
+    setSubmittingInventoryId(inventoryId);
+    try {
+      const response = await fetch(`/api/client/inventory/${inventoryId}/distribute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
 
-    if (!response.ok) {
-      showToast({ message: data.error ?? "Failed to distribute inventory.", type: "error" });
-      return;
-    }
+      if (!response.ok) {
+        showToast({ message: data.error ?? "Failed to distribute inventory.", type: "error" });
+        return;
+      }
 
-    showToast({ message: "Inventory distributed successfully.", type: "success" });
-    setDistributionForm((prev) => ({
-      ...prev,
-      [inventoryId]: { employeeName: "", employeeId: "", quantity: 1 },
-    }));
+      showToast({ message: "Inventory distributed successfully.", type: "success" });
+      setDistributionForm((prev) => ({
+        ...prev,
+        [inventoryId]: { employeeName: "", employeeId: "", quantity: 1 },
+      }));
 
-    const invRes = await fetch("/api/client/inventory");
-    const invData = await invRes.json();
-    if (invRes.ok) {
-      setInventory(invData.inventory ?? []);
-    } else {
-      showToast({ message: invData.error ?? "Unable to refresh inventory.", type: "error" });
+      const invRes = await fetch("/api/client/inventory");
+      const invData = await invRes.json();
+      if (invRes.ok) {
+        setInventory(invData.inventory ?? []);
+        setConfirmInventoryId(null);
+      } else {
+        showToast({ message: invData.error ?? "Unable to refresh inventory.", type: "error" });
+      }
+    } catch {
+      showToast({ message: "Network error while distributing inventory.", type: "error" });
+    } finally {
+      setSubmittingInventoryId(null);
     }
   };
 
@@ -184,9 +193,10 @@ export function ClientInventory() {
               <button
                 type="button"
                 onClick={() => openDistributionConfirm(row.id)}
+                disabled={submittingInventoryId === row.id}
                 className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
               >
-                Distribute
+                {submittingInventoryId === row.id ? "Distributing..." : "Distribute"}
               </button>
             </div>
           </section>
@@ -233,7 +243,11 @@ export function ClientInventory() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           role="dialog"
           aria-modal="true"
-          onClick={() => setConfirmInventoryId(null)}
+          onClick={() => {
+            if (submittingInventoryId !== confirmInventoryId) {
+              setConfirmInventoryId(null);
+            }
+          }}
         >
           <div
             className="w-full max-w-lg rounded-2xl border border-[#e8e1d6] bg-[#fdfbf8] p-4 shadow-2xl"
@@ -269,22 +283,23 @@ export function ClientInventory() {
               <button
                 type="button"
                 onClick={() => setConfirmInventoryId(null)}
-                className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#f2ede5]"
+                disabled={submittingInventoryId === confirmInventoryId}
+                className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#f2ede5] disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
+                disabled={submittingInventoryId === confirmInventoryId}
                 onClick={async () => {
                   const targetId = confirmInventoryId;
-                  setConfirmInventoryId(null);
                   if (targetId) {
                     await distribute(targetId);
                   }
                 }}
-                className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+                className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
               >
-                Confirm Distribution
+                {submittingInventoryId === confirmInventoryId ? "Distributing..." : "Confirm Distribution"}
               </button>
             </div>
           </div>
