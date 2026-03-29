@@ -22,14 +22,15 @@ type ClientInventoryProps = {
 
 export function ClientInventory({ initialInventory }: ClientInventoryProps) {
   const [inventory, setInventory] = useState<InventoryRow[]>(initialInventory);
-  const isLoading = false;
   const [previewImage, setPreviewImage] = useState<{ src: string; label: string } | null>(null);
-  const [confirmInventoryId, setConfirmInventoryId] = useState<string | null>(null);
   const [submittingInventoryId, setSubmittingInventoryId] = useState<string | null>(null);
+  const [distributeModal, setDistributeModal] = useState<{
+    inventoryId: string;
+    employeeName: string;
+    employeeId: string;
+    quantity: number;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [distributionForm, setDistributionForm] = useState<{
-    [key: string]: { employeeName: string; employeeId: string; quantity: number };
-  }>({});
   const { showToast } = useClientToast();
 
   const filteredRows = useMemo(() => {
@@ -42,9 +43,10 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
     });
   }, [inventory, searchQuery]);
 
-  const distribute = async (inventoryId: string) => {
-    const payload = distributionForm[inventoryId];
-    if (!payload) return;
+  const distribute = async (
+    inventoryId: string,
+    payload: { employeeName: string; employeeId: string; quantity: number }
+  ) => {
     setSubmittingInventoryId(inventoryId);
     try {
       const response = await fetch(`/api/client/inventory/${inventoryId}/distribute`, {
@@ -60,10 +62,6 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
       }
 
       showToast({ message: "Inventory distributed successfully.", type: "success" });
-      setDistributionForm((prev) => ({
-        ...prev,
-        [inventoryId]: { employeeName: "", employeeId: "", quantity: 1 },
-      }));
 
       const invRes = await fetch("/api/client/inventory", {
         cache: "no-store",
@@ -72,7 +70,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
       const invData = await invRes.json();
       if (invRes.ok) {
         setInventory(invData.inventory ?? []);
-        setConfirmInventoryId(null);
+        setDistributeModal(null);
       } else {
         showToast({ message: invData.error ?? "Unable to refresh inventory.", type: "error" });
       }
@@ -83,141 +81,128 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
     }
   };
 
-  const openDistributionConfirm = (inventoryId: string) => {
-    const payload = distributionForm[inventoryId];
-    if (!payload || !payload.employeeName.trim()) {
+  const submitDistributeModal = async () => {
+    if (!distributeModal) return;
+    if (!distributeModal.employeeName.trim()) {
       showToast({ message: "Please enter employee name before distributing.", type: "error" });
       return;
     }
-    if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
+    if (!Number.isFinite(distributeModal.quantity) || distributeModal.quantity <= 0) {
       showToast({ message: "Please enter a valid quantity.", type: "error" });
       return;
     }
-    setConfirmInventoryId(inventoryId);
+    await distribute(distributeModal.inventoryId, {
+      employeeName: distributeModal.employeeName.trim(),
+      employeeId: distributeModal.employeeId.trim(),
+      quantity: distributeModal.quantity,
+    });
   };
 
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-slate-900 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
-        <h2 className="text-lg font-semibold">Inventory</h2>
-        <p className="text-sm text-slate-600">View stock levels and distribute inventory to employees.</p>
-
-        <div className="mt-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Inventory</h2>
+            <p className="text-sm text-slate-600">View stock levels and distribute inventory to employees.</p>
+          </div>
           <input
             placeholder="Search by SKU name or description"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+            className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200 md:max-w-[420px]"
           />
         </div>
       </section>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {[0, 1, 2].map((idx) => (
-            <section
-              key={idx}
-              className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-slate-900 shadow-[0_14px_30px_rgba(15,23,42,0.07)]"
-            >
-              <div className="h-5 w-52 animate-pulse rounded bg-slate-200" />
-              <div className="mt-2 h-4 w-72 animate-pulse rounded bg-slate-200" />
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <div className="h-10 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-10 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-10 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-10 animate-pulse rounded-xl bg-slate-200" />
-              </div>
-            </section>
-          ))}
+      <section className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-slate-900 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
+        <div className="overflow-auto rounded-xl border border-[#ddd4c7] bg-[#faf8f4]">
+          <table className="w-full min-w-[1020px] text-left text-sm text-slate-700">
+            <thead className="bg-[#f1ebe2] text-slate-700">
+              <tr>
+                <th className="px-3 py-2">SKU</th>
+                <th className="px-3 py-2">Description</th>
+                <th className="px-3 py-2">Image</th>
+                <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2 text-right">Used</th>
+                <th className="px-3 py-2 text-right">Available</th>
+                <th className="px-3 py-2 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr key={row.id} className="border-t border-[#e6ddd0]">
+                  <td className="px-3 py-2 font-medium text-slate-900">{row.sku?.name ?? "SKU"}</td>
+                  <td className="px-3 py-2 text-slate-600">{row.sku?.description ?? "-"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {row.sku?.imageUrl ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewImage({ src: row.sku.imageUrl ?? "", label: row.sku?.name ?? "SKU preview" })
+                            }
+                            className="group overflow-hidden rounded-lg border border-[#ddd4c7] bg-[#faf8f4] p-0.5"
+                            title="Preview image"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={row.sku.imageUrl}
+                              alt={`${row.sku?.name ?? "SKU"} thumbnail`}
+                              className="h-10 w-10 rounded object-cover transition group-hover:scale-105"
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewImage({ src: row.sku.imageUrl ?? "", label: row.sku?.name ?? "SKU preview" })
+                            }
+                            className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5]"
+                          >
+                            View
+                          </button>
+                        </>
+                      ) : (
+                        "-"
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right">{row.totalQuantity}</td>
+                  <td className="px-3 py-2 text-right">{row.usedQuantity}</td>
+                  <td className="px-3 py-2 text-right font-medium">{row.availableQuantity}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-2">
+                      <Link
+                        href={`/client/inventory/${row.id}/distributed`}
+                        className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2.5 py-1.5 text-xs text-slate-700 hover:bg-[#f2ede5]"
+                      >
+                        Distributed history
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDistributeModal({
+                            inventoryId: row.id,
+                            employeeName: "",
+                            employeeId: "",
+                            quantity: 1,
+                          })
+                        }
+                        className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                      >
+                        Distribute
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        filteredRows.map((row) => {
-          const form = distributionForm[row.id] ?? { employeeName: "", employeeId: "", quantity: 1 };
-          return (
-            <section
-              key={row.id}
-              className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-slate-900 shadow-[0_14px_30px_rgba(15,23,42,0.07)]"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{row.sku?.name ?? "SKU"}</h3>
-                  <p className="text-sm text-slate-600">{row.sku?.description}</p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Total: {row.totalQuantity} | Used: {row.usedQuantity} | Available: {row.availableQuantity}
-                  </p>
-                </div>
+      </section>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {row.sku?.imageUrl ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPreviewImage({ src: row.sku.imageUrl ?? "", label: row.sku?.name ?? "SKU preview" })
-                      }
-                      className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1.5 text-xs text-slate-700 hover:bg-[#f2ede5]"
-                    >
-                      View image
-                    </button>
-                  ) : null}
-                  <Link
-                    href={`/client/inventory/${row.id}/distributed`}
-                    className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-2 text-xs text-slate-700 hover:bg-[#f2ede5]"
-                  >
-                    Distributed history
-                  </Link>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <input
-                  placeholder="Employee name"
-                  value={form.employeeName}
-                  onChange={(event) =>
-                    setDistributionForm((prev) => ({
-                      ...prev,
-                      [row.id]: { ...form, employeeName: event.target.value },
-                    }))
-                  }
-                  className="rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-                <input
-                  placeholder="Employee ID"
-                  value={form.employeeId}
-                  onChange={(event) =>
-                    setDistributionForm((prev) => ({
-                      ...prev,
-                      [row.id]: { ...form, employeeId: event.target.value },
-                    }))
-                  }
-                  className="rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-                <input
-                  type="number"
-                  min={1}
-                  value={form.quantity}
-                  onChange={(event) =>
-                    setDistributionForm((prev) => ({
-                      ...prev,
-                      [row.id]: { ...form, quantity: Number(event.target.value) },
-                    }))
-                  }
-                  className="rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-                <button
-                  type="button"
-                  onClick={() => openDistributionConfirm(row.id)}
-                  disabled={submittingInventoryId === row.id}
-                  className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
-                >
-                  {submittingInventoryId === row.id ? "Distributing..." : "Distribute"}
-                </button>
-              </div>
-            </section>
-          );
-        })
-      )}
-
-      {!isLoading && filteredRows.length === 0 ? (
+      {filteredRows.length === 0 ? (
         <div className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-sm text-slate-600">
           No matching inventory rows.
         </div>
@@ -252,14 +237,14 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
         </div>
       ) : null}
 
-      {confirmInventoryId ? (
+      {distributeModal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => {
-            if (submittingInventoryId !== confirmInventoryId) {
-              setConfirmInventoryId(null);
+            if (submittingInventoryId !== distributeModal.inventoryId) {
+              setDistributeModal(null);
             }
           }}
         >
@@ -267,53 +252,62 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
             className="w-full max-w-lg rounded-2xl border border-[#e8e1d6] bg-[#fdfbf8] p-4 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-slate-900">Confirm Distribution</h3>
-            {(() => {
-              const row = inventory.find((item) => item.id === confirmInventoryId);
-              const form = distributionForm[confirmInventoryId] ?? {
-                employeeName: "",
-                employeeId: "",
-                quantity: 1,
-              };
-              return (
-                <div className="mt-3 space-y-1 text-sm text-slate-700">
-                  <p>
-                    SKU: <span className="font-medium">{row?.sku?.name ?? "SKU"}</span>
-                  </p>
-                  <p>
-                    Employee: <span className="font-medium">{form.employeeName || "-"}</span>
-                  </p>
-                  <p>
-                    Employee ID: <span className="font-medium">{form.employeeId || "-"}</span>
-                  </p>
-                  <p>
-                    Quantity: <span className="font-medium">{form.quantity}</span>
-                  </p>
-                </div>
-              );
-            })()}
+            <h3 className="text-base font-semibold text-slate-900">Distribute Inventory</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              SKU:{" "}
+              <span className="font-medium text-slate-900">
+                {inventory.find((item) => item.id === distributeModal.inventoryId)?.sku?.name ?? "SKU"}
+              </span>
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <input
+                placeholder="Employee name"
+                value={distributeModal.employeeName}
+                onChange={(event) =>
+                  setDistributeModal((prev) =>
+                    prev ? { ...prev, employeeName: event.target.value } : prev
+                  )
+                }
+                className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              />
+              <input
+                placeholder="Employee ID"
+                value={distributeModal.employeeId}
+                onChange={(event) =>
+                  setDistributeModal((prev) => (prev ? { ...prev, employeeId: event.target.value } : prev))
+                }
+                className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              />
+              <input
+                type="number"
+                min={1}
+                value={distributeModal.quantity}
+                onChange={(event) =>
+                  setDistributeModal((prev) =>
+                    prev ? { ...prev, quantity: Number(event.target.value) } : prev
+                  )
+                }
+                className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
 
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setConfirmInventoryId(null)}
-                disabled={submittingInventoryId === confirmInventoryId}
+                onClick={() => setDistributeModal(null)}
+                disabled={submittingInventoryId === distributeModal.inventoryId}
                 className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-sm text-slate-700 hover:bg-[#f2ede5] disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={submittingInventoryId === confirmInventoryId}
-                onClick={async () => {
-                  const targetId = confirmInventoryId;
-                  if (targetId) {
-                    await distribute(targetId);
-                  }
-                }}
+                disabled={submittingInventoryId === distributeModal.inventoryId}
+                onClick={submitDistributeModal}
                 className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
               >
-                {submittingInventoryId === confirmInventoryId ? "Distributing..." : "Confirm Distribution"}
+                {submittingInventoryId === distributeModal.inventoryId ? "Distributing..." : "Distribute"}
               </button>
             </div>
           </div>
