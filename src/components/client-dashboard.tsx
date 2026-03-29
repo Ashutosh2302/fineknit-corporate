@@ -26,27 +26,34 @@ type OrderLine = {
 export function ClientDashboard() {
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [orders, setOrders] = useState<OrderLine[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { showToast } = useClientToast();
 
   useEffect(() => {
     const load = async () => {
-      const [invRes, ordRes] = await Promise.all([
-        fetch("/api/client/inventory", { cache: "no-store", credentials: "same-origin" }),
-        fetch("/api/client/orders", { cache: "no-store", credentials: "same-origin" }),
-      ]);
-      const invData = await invRes.json();
-      const ordData = await ordRes.json();
+      try {
+        const [invRes, ordRes] = await Promise.all([
+          fetch("/api/client/inventory", { cache: "no-store", credentials: "same-origin" }),
+          fetch("/api/client/orders", { cache: "no-store", credentials: "same-origin" }),
+        ]);
+        const invData = await invRes.json();
+        const ordData = await ordRes.json();
 
-      if (!invRes.ok) {
-        showToast({ message: invData.error ?? "Unable to load inventory summary.", type: "error" });
-      } else {
-        setInventory(invData.inventory ?? []);
-      }
+        if (!invRes.ok) {
+          showToast({ message: invData.error ?? "Unable to load inventory summary.", type: "error" });
+        } else {
+          setInventory(invData.inventory ?? []);
+        }
 
-      if (!ordRes.ok) {
-        showToast({ message: ordData.error || "Unable to load orders summary.", type: "error" });
-      } else {
-        setOrders(ordData.orders ?? []);
+        if (!ordRes.ok) {
+          showToast({ message: ordData.error || "Unable to load orders summary.", type: "error" });
+        } else {
+          setOrders(ordData.orders ?? []);
+        }
+      } catch {
+        showToast({ message: "Unable to load dashboard data right now.", type: "error" });
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -101,23 +108,43 @@ export function ClientDashboard() {
         <div className="mt-4 grid gap-3 md:grid-cols-5">
           <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Total inventory</p>
-            <p className="mt-1 text-xl font-semibold">{totalInventory}</p>
+            {isLoading ? (
+              <div className="mt-2 h-7 w-16 animate-pulse rounded bg-slate-200" />
+            ) : (
+              <p className="mt-1 text-xl font-semibold">{totalInventory}</p>
+            )}
           </div>
           <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Distributed</p>
-            <p className="mt-1 text-xl font-semibold">{totalUsed}</p>
+            {isLoading ? (
+              <div className="mt-2 h-7 w-16 animate-pulse rounded bg-slate-200" />
+            ) : (
+              <p className="mt-1 text-xl font-semibold">{totalUsed}</p>
+            )}
           </div>
           <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Available</p>
-            <p className="mt-1 text-xl font-semibold">{totalAvailable}</p>
+            {isLoading ? (
+              <div className="mt-2 h-7 w-16 animate-pulse rounded bg-slate-200" />
+            ) : (
+              <p className="mt-1 text-xl font-semibold">{totalAvailable}</p>
+            )}
           </div>
           <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Delivered orders</p>
-            <p className="mt-1 text-xl font-semibold">{deliveredOrderCount}</p>
+            {isLoading ? (
+              <div className="mt-2 h-7 w-16 animate-pulse rounded bg-slate-200" />
+            ) : (
+              <p className="mt-1 text-xl font-semibold">{deliveredOrderCount}</p>
+            )}
           </div>
           <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">Delivered qty</p>
-            <p className="mt-1 text-xl font-semibold">{deliveredQuantity}</p>
+            {isLoading ? (
+              <div className="mt-2 h-7 w-16 animate-pulse rounded bg-slate-200" />
+            ) : (
+              <p className="mt-1 text-xl font-semibold">{deliveredQuantity}</p>
+            )}
           </div>
         </div>
       </section>
@@ -127,7 +154,9 @@ export function ClientDashboard() {
           <h3 className="text-base font-semibold text-slate-900">Availability by SKU</h3>
           <p className="text-sm text-slate-600">Top SKUs by available inventory.</p>
           <div className="mt-4 space-y-3">
-            {availabilityRows.length === 0 ? (
+            {isLoading ? (
+              [0, 1, 2].map((idx) => <div key={idx} className="h-8 animate-pulse rounded bg-slate-200" />)
+            ) : availabilityRows.length === 0 ? (
               <p className="text-sm text-slate-500">No inventory data yet.</p>
             ) : (
               availabilityRows.map((row) => (
@@ -152,7 +181,9 @@ export function ClientDashboard() {
           <h3 className="text-base font-semibold text-slate-900">Utilization by SKU</h3>
           <p className="text-sm text-slate-600">Top SKUs by distributed quantity.</p>
           <div className="mt-4 space-y-3">
-            {utilizationRows.length === 0 ? (
+            {isLoading ? (
+              [0, 1, 2].map((idx) => <div key={idx} className="h-8 animate-pulse rounded bg-slate-200" />)
+            ) : utilizationRows.length === 0 ? (
               <p className="text-sm text-slate-500">No usage data yet.</p>
             ) : (
               utilizationRows.map((row) => (
@@ -180,7 +211,7 @@ export function ClientDashboard() {
             <h3 className="text-base font-semibold text-slate-900">Low Inventory Alerts</h3>
             <p className="text-sm text-slate-600">Prompt refill requests when stock is close to running out.</p>
           </div>
-          {lowStockRows.length > 0 ? (
+          {!isLoading && lowStockRows.length > 0 ? (
             <button
               type="button"
               onClick={requestRefill}
@@ -203,7 +234,15 @@ export function ClientDashboard() {
               </tr>
             </thead>
             <tbody>
-              {inventory.map((row) => {
+              {isLoading
+                ? [0, 1, 2].map((idx) => (
+                    <tr key={`loading-${idx}`} className="border-t border-[#e6ddd0]">
+                      <td className="px-3 py-2" colSpan={5}>
+                        <div className="h-5 animate-pulse rounded bg-slate-200" />
+                      </td>
+                    </tr>
+                  ))
+                : inventory.map((row) => {
                 const threshold = Math.max(5, Math.ceil(row.totalQuantity * 0.2));
                 const runningLow = row.availableQuantity <= threshold;
                 return (
