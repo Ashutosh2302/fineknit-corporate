@@ -50,7 +50,7 @@ export function AdminShell({ title, subtitle, adminEmail, adminType, children }:
                 aria-current={isActive ? "page" : undefined}
                 className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
                   isActive
-                    ? "border-slate-900 bg-slate-900 text-white"
+                    ? "border-[#ead8b0] bg-gradient-to-r from-[#fff8e8] to-[#f4e6ca] text-[#5f4a2e] shadow-[0_6px_18px_rgba(160,126,72,0.22)]"
                     : "border-[#ddd4c7] bg-[#faf8f4] text-slate-700 hover:bg-[#f2ede5]"
                 }`}
               >
