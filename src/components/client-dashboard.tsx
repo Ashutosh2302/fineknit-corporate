@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useClientToast } from "@/components/client-toast-provider";
 
 type InventoryRow = {
@@ -23,42 +23,16 @@ type OrderLine = {
   deliveryDate?: string;
 };
 
-export function ClientDashboard() {
-  const [inventory, setInventory] = useState<InventoryRow[]>([]);
-  const [orders, setOrders] = useState<OrderLine[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+type ClientDashboardProps = {
+  initialInventory: InventoryRow[];
+  initialOrders: OrderLine[];
+};
+
+export function ClientDashboard({ initialInventory, initialOrders }: ClientDashboardProps) {
+  const [inventory] = useState<InventoryRow[]>(initialInventory);
+  const [orders] = useState<OrderLine[]>(initialOrders);
+  const isLoading = false;
   const { showToast } = useClientToast();
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [invRes, ordRes] = await Promise.all([
-          fetch("/api/client/inventory", { cache: "no-store", credentials: "same-origin" }),
-          fetch("/api/client/orders", { cache: "no-store", credentials: "same-origin" }),
-        ]);
-        const invData = await invRes.json();
-        const ordData = await ordRes.json();
-
-        if (!invRes.ok) {
-          showToast({ message: invData.error ?? "Unable to load inventory summary.", type: "error" });
-        } else {
-          setInventory(invData.inventory ?? []);
-        }
-
-        if (!ordRes.ok) {
-          showToast({ message: ordData.error || "Unable to load orders summary.", type: "error" });
-        } else {
-          setOrders(ordData.orders ?? []);
-        }
-      } catch {
-        showToast({ message: "Unable to load dashboard data right now.", type: "error" });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void load();
-  }, [showToast]);
 
   const totalInventory = useMemo(() => inventory.reduce((sum, row) => sum + row.totalQuantity, 0), [inventory]);
   const totalUsed = useMemo(() => inventory.reduce((sum, row) => sum + row.usedQuantity, 0), [inventory]);

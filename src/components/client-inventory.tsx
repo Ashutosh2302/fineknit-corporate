@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useClientToast } from "@/components/client-toast-provider";
 
 type InventoryRow = {
@@ -16,9 +16,13 @@ type InventoryRow = {
   };
 };
 
-export function ClientInventory() {
-  const [inventory, setInventory] = useState<InventoryRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+type ClientInventoryProps = {
+  initialInventory: InventoryRow[];
+};
+
+export function ClientInventory({ initialInventory }: ClientInventoryProps) {
+  const [inventory, setInventory] = useState<InventoryRow[]>(initialInventory);
+  const isLoading = false;
   const [previewImage, setPreviewImage] = useState<{ src: string; label: string } | null>(null);
   const [confirmInventoryId, setConfirmInventoryId] = useState<string | null>(null);
   const [submittingInventoryId, setSubmittingInventoryId] = useState<string | null>(null);
@@ -27,29 +31,6 @@ export function ClientInventory() {
     [key: string]: { employeeName: string; employeeId: string; quantity: number };
   }>({});
   const { showToast } = useClientToast();
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch("/api/client/inventory", {
-          cache: "no-store",
-          credentials: "same-origin",
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          showToast({ message: data.error ?? "Failed to load inventory.", type: "error" });
-          return;
-        }
-        setInventory(data.inventory ?? []);
-      } catch {
-        showToast({ message: "Unable to load inventory right now.", type: "error" });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void load();
-  }, [showToast]);
 
   const filteredRows = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

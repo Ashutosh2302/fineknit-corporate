@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useClientToast } from "@/components/client-toast-provider";
+import { useMemo, useState } from "react";
 
 type OrderLine = {
   _id: string;
@@ -18,34 +17,14 @@ type OrderLine = {
   };
 };
 
-export function ClientOrders() {
-  const [orders, setOrders] = useState<OrderLine[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+type ClientOrdersProps = {
+  initialOrders: OrderLine[];
+};
+
+export function ClientOrders({ initialOrders }: ClientOrdersProps) {
+  const [orders] = useState<OrderLine[]>(initialOrders);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewImage, setPreviewImage] = useState<{ src: string; label: string } | null>(null);
-  const { showToast } = useClientToast();
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch("/api/client/orders", {
-          cache: "no-store",
-          credentials: "same-origin",
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          showToast({ message: data.error ?? "Failed to load orders.", type: "error" });
-          return;
-        }
-        setOrders(data.orders ?? []);
-      } catch {
-        showToast({ message: "Unable to load orders right now.", type: "error" });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    void load();
-  }, [showToast]);
 
   const groupedOrders = useMemo(() => {
     const map = new Map<string, OrderLine[]>();
@@ -81,19 +60,7 @@ export function ClientOrders() {
         </div>
       </section>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {[0, 1].map((idx) => (
-            <section
-              key={idx}
-              className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-slate-900 shadow-[0_14px_30px_rgba(15,23,42,0.07)]"
-            >
-              <div className="h-5 w-56 animate-pulse rounded bg-slate-200" />
-              <div className="mt-3 h-28 w-full animate-pulse rounded-xl border border-[#ddd4c7] bg-[#faf8f4]" />
-            </section>
-          ))}
-        </div>
-      ) : filteredGroupedOrders.length === 0 ? (
+      {filteredGroupedOrders.length === 0 ? (
         <div className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5 text-sm text-slate-600">
           No delivered orders found.
         </div>
