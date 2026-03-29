@@ -18,11 +18,20 @@ export async function POST(request: Request) {
 
     if (body.portal === "admin") {
       const admin = await AdminModel.findOne({
-        $or: [{ email: body.identifier.toLowerCase() }, { phone: body.identifier }],
+        $or: [
+          { email: body.identifier.toLowerCase() },
+          { phone: body.identifier },
+        ],
       });
 
-      if (!admin || !(await verifyPassword(body.password, admin.passwordHash))) {
-        return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+      if (
+        !admin ||
+        !(await verifyPassword(body.password, admin.passwordHash))
+      ) {
+        return NextResponse.json(
+          { error: "Invalid credentials" },
+          { status: 401 },
+        );
       }
 
       await setSessionCookie({
@@ -43,11 +52,20 @@ export async function POST(request: Request) {
     }
 
     const client = await ClientModel.findOne({
-      $or: [{ email: body.identifier.toLowerCase() }, { phoneNumber: body.identifier }],
+      $or: [
+        { email: body.identifier.toLowerCase() },
+        { phoneNumber: body.identifier },
+      ],
     });
 
-    if (!client || !(await verifyPassword(body.password, client.passwordHash))) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    if (
+      !client ||
+      !(await verifyPassword(body.password, client.passwordHash))
+    ) {
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 },
+      );
     }
 
     const passwordExpiryDate = client.passwordExpiryDate
@@ -59,7 +77,7 @@ export async function POST(request: Request) {
           error: "Password expired. Update your password to continue.",
           code: "PASSWORD_EXPIRED",
         },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -79,8 +97,13 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid payload" }, { status: 400 });
+      return NextResponse.json(
+        { error: error.issues[0]?.message ?? "Invalid payload" },
+        { status: 400 },
+      );
     }
+
+    console.error("Login failed:", error);
 
     return NextResponse.json({ error: "Login failed" }, { status: 500 });
   }
