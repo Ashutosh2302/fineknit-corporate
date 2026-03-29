@@ -100,7 +100,9 @@ export function PortalLoginForm({
       </p>
       <h1 className="mt-2 text-2xl font-semibold">Portal Login</h1>
       <p className="mt-2 text-sm text-slate-600">
-        Sign in as a client or admin using email/phone and password.
+        {lockPortal && portal === "client"
+          ? "Sign in using your email or phone and password."
+          : "Sign in using email or phone and password."}
       </p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
@@ -118,7 +120,7 @@ export function PortalLoginForm({
           </div>
         ) : (
           <div className="rounded-xl border border-[#ddd4c7] bg-[#faf8f4] px-3 py-2 text-sm text-slate-700">
-            Portal: <span className="font-medium capitalize">{portal}</span>
+            <span className="font-medium">Client Portal</span>
           </div>
         )}
 
