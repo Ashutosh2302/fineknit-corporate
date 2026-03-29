@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useClientToast } from "@/components/client-toast-provider";
+import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
 
 type DistributedRow = {
   id: string;
@@ -40,18 +41,24 @@ export function ClientDistributedInventory({ inventoryId }: ClientDistributedInv
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
-      const response = await fetch(`/api/client/inventory/${inventoryId}/distributed`);
-      const data = await response.json();
+      try {
+        const response = await fetchWithAuthRedirect(`/api/client/inventory/${inventoryId}/distributed`);
+        const data = await response.json();
 
-      if (!response.ok) {
-        showToast({ message: data.error ?? "Unable to load distributed inventory.", type: "error" });
+        if (!response.ok) {
+          showToast({ message: data.error ?? "Unable to load distributed inventory.", type: "error" });
+          setIsLoading(false);
+          return;
+        }
+
+        setInventory(data.inventory ?? null);
+        setRows(data.distributed ?? []);
+      } catch (error) {
+        if (error instanceof UnauthorizedRequestError) return;
+        showToast({ message: "Unable to load distributed inventory.", type: "error" });
+      } finally {
         setIsLoading(false);
-        return;
       }
-
-      setInventory(data.inventory ?? null);
-      setRows(data.distributed ?? []);
-      setIsLoading(false);
     };
 
     void load();

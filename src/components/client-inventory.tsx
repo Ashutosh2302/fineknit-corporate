@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useClientToast } from "@/components/client-toast-provider";
+import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
 
 type InventoryRow = {
   id: string;
@@ -49,7 +50,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
   ) => {
     setSubmittingInventoryId(inventoryId);
     try {
-      const response = await fetch(`/api/client/inventory/${inventoryId}/distribute`, {
+      const response = await fetchWithAuthRedirect(`/api/client/inventory/${inventoryId}/distribute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -63,7 +64,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
 
       showToast({ message: "Inventory distributed successfully.", type: "success" });
 
-      const invRes = await fetch("/api/client/inventory", {
+      const invRes = await fetchWithAuthRedirect("/api/client/inventory", {
         cache: "no-store",
         credentials: "same-origin",
       });
@@ -74,7 +75,8 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
       } else {
         showToast({ message: invData.error ?? "Unable to refresh inventory.", type: "error" });
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
       showToast({ message: "Network error while distributing inventory.", type: "error" });
     } finally {
       setSubmittingInventoryId(null);

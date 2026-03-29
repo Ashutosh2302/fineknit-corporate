@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
 
 type Client = {
   id: string;
@@ -41,11 +42,13 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
 
     setLoadingSkus(true);
     try {
-      const response = await fetch(`/api/admin/skus?clientId=${clientId}`);
+      const response = await fetchWithAuthRedirect(`/api/admin/skus?clientId=${clientId}`);
       const data = await response.json();
       if (response.ok) {
         setSkus(data.skus ?? []);
       }
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
     } finally {
       setLoadingSkus(false);
     }
@@ -69,7 +72,7 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
         const uploadFormData = new FormData();
         uploadFormData.append("folder", "skus");
         uploadFormData.append("file", imageFile);
-        const uploadResponse = await fetch("/api/admin/upload", {
+        const uploadResponse = await fetchWithAuthRedirect("/api/admin/upload", {
           method: "POST",
           body: uploadFormData,
         });
@@ -84,7 +87,7 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
         imageUrl = uploadData.url;
       }
 
-      const response = await fetch("/api/admin/skus", {
+      const response = await fetchWithAuthRedirect("/api/admin/skus", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, imageUrl, clientId: selectedClientId }),
@@ -100,7 +103,8 @@ export function AdminSkusManager({ initialClients, initialSkus }: Props) {
       setForm({ name: "", description: "", imageUrl: "" });
       setImageFile(null);
       await loadSkus(selectedClientId);
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
       setStatus("Unable to create SKU right now.");
     } finally {
       setUploading(false);

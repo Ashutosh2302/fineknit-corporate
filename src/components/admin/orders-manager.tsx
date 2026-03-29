@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
 
 type Client = {
   id: string;
@@ -153,8 +154,8 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
     setLoadingClientData(true);
     try {
       const [skusResponse, ordersResponse] = await Promise.all([
-        fetch(`/api/admin/skus?clientId=${clientId}`),
-        fetch(`/api/admin/orders?clientId=${clientId}`),
+        fetchWithAuthRedirect(`/api/admin/skus?clientId=${clientId}`),
+        fetchWithAuthRedirect(`/api/admin/orders?clientId=${clientId}`),
       ]);
 
       const skusData = await skusResponse.json();
@@ -162,6 +163,8 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
 
       if (skusResponse.ok) setSkus(skusData.skus ?? []);
       if (ordersResponse.ok) setOrders(ordersData.orders ?? []);
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
     } finally {
       setLoadingClientData(false);
     }
@@ -190,7 +193,7 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
         const uploadFormData = new FormData();
         uploadFormData.append("folder", "invoices");
         uploadFormData.append("file", invoiceFile);
-        const uploadResponse = await fetch("/api/admin/upload", {
+        const uploadResponse = await fetchWithAuthRedirect("/api/admin/upload", {
           method: "POST",
           body: uploadFormData,
         });
@@ -204,7 +207,7 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
         invoiceUrl = uploadData.url;
       }
 
-      const response = await fetch("/api/admin/orders", {
+      const response = await fetchWithAuthRedirect("/api/admin/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -226,7 +229,8 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
       setInvoiceFile(null);
       setPayload({ delivered: false, deliveryDate: "", items: [emptyItem()] });
       await loadForClient(selectedClientId);
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
       setStatus("Unable to create order right now.");
     } finally {
       setUploadingInvoice(false);
@@ -243,7 +247,7 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
 
     setUpdatingOrderCode(orderCode);
     try {
-      const response = await fetch("/api/admin/orders", {
+      const response = await fetchWithAuthRedirect("/api/admin/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -265,6 +269,9 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
         setDeliveryDateByOrder((prev) => ({ ...prev, [orderCode]: "" }));
       }
       await loadForClient(selectedClientId);
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
+      showToast("Unable to update order delivery status.", "error");
     } finally {
       setUpdatingOrderCode(null);
     }

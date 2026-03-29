@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
 
 type Client = {
   id: string;
@@ -38,7 +39,7 @@ export function AdminClientsManager({ initialClients }: Props) {
     setCreatingClient(true);
 
     try {
-      const response = await fetch("/api/admin/clients", {
+      const response = await fetchWithAuthRedirect("/api/admin/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -55,12 +56,13 @@ export function AdminClientsManager({ initialClients }: Props) {
       setGeneratedPassword(data.initialPassword ?? "");
       setForm({ name: "", email: "", phoneNumber: "", address: "" });
 
-      const listResponse = await fetch("/api/admin/clients");
+      const listResponse = await fetchWithAuthRedirect("/api/admin/clients");
       const listData = await listResponse.json();
       if (listResponse.ok) {
         setClients(listData.clients ?? []);
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedRequestError) return;
       setStatus("Unable to create client right now.");
     } finally {
       setCreatingClient(false);
