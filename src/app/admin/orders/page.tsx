@@ -5,6 +5,7 @@ import { requireAdminPage } from "@/lib/guards";
 import { ClientModel } from "@/models/Client";
 import { ClientOrderModel } from "@/models/ClientOrder";
 import { ClientSkuModel } from "@/models/ClientSku";
+import { hasPositiveSizeQuantity, normalizeSizeQuantities, sumSizeQuantities } from "@/lib/size-quantities";
 
 export default async function AdminOrdersPage() {
   const admin = await requireAdminPage();
@@ -17,7 +18,7 @@ export default async function AdminOrdersPage() {
     ? await Promise.all([
         ClientSkuModel.find({ clientId: firstClient._id }).sort({ createdAt: -1 }).lean(),
         ClientOrderModel.find({ clientId: firstClient._id })
-          .populate("skuId", "name")
+          .populate("skuId", "name imageUrl")
           .sort({ createdAt: -1 })
           .lean(),
       ])
@@ -45,7 +46,20 @@ export default async function AdminOrdersPage() {
           orderCode: order.orderCode,
           createdAt: order.createdAt,
           invoiceUrl: order.invoiceUrl,
-          quantity: order.quantity,
+          quantities: (() => {
+            const quantities = normalizeSizeQuantities(order.quantities);
+            if (!hasPositiveSizeQuantity(quantities) && order.quantity > 0) {
+              quantities.free_size = order.quantity;
+            }
+            return quantities;
+          })(),
+          quantity: (() => {
+            const quantities = normalizeSizeQuantities(order.quantities);
+            if (!hasPositiveSizeQuantity(quantities) && order.quantity > 0) {
+              quantities.free_size = order.quantity;
+            }
+            return sumSizeQuantities(quantities);
+          })(),
           sellingPrice: order.sellingPrice,
           costPrice: order.costPrice,
           delivered: order.delivered,

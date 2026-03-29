@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useClientToast } from "@/components/client-toast-provider";
 import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
+import { formatSizeQuantities, type SizeQuantities } from "@/lib/size-quantities";
 
 type DistributedRow = {
   id: string;
   employeeName: string;
   employeeId: string;
   quantity: number;
+  quantities: SizeQuantities;
   createdAt: string;
 };
 
@@ -18,6 +20,9 @@ type InventoryMeta = {
   totalQuantity: number;
   usedQuantity: number;
   availableQuantity: number;
+  totalQuantitiesBySize: SizeQuantities;
+  usedQuantitiesBySize: SizeQuantities;
+  availableQuantitiesBySize: SizeQuantities;
   sku?: {
     name?: string;
     description?: string;
@@ -113,14 +118,19 @@ export function ClientDistributedInventory({ inventoryId }: ClientDistributedInv
             <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{inventory.totalQuantity}</p>
+              <p className="mt-1 text-xs text-slate-600">{formatSizeQuantities(inventory.totalQuantitiesBySize) || "-"}</p>
             </div>
             <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">Distributed</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{inventory.usedQuantity}</p>
+              <p className="mt-1 text-xs text-slate-600">{formatSizeQuantities(inventory.usedQuantitiesBySize) || "-"}</p>
             </div>
             <div className="rounded-xl border border-[#e9e2d8] bg-[#faf8f4] p-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">Available</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{inventory.availableQuantity}</p>
+              <p className="mt-1 text-xs text-slate-600">
+                {formatSizeQuantities(inventory.availableQuantitiesBySize) || "-"}
+              </p>
             </div>
           </div>
         ) : null}
@@ -159,11 +169,12 @@ export function ClientDistributedInventory({ inventoryId }: ClientDistributedInv
 
         {!isLoading ? (
           <div className="mt-4 overflow-auto rounded-xl border border-[#ddd4c7] bg-[#faf8f4]">
-            <table className="w-full min-w-[680px] text-left text-sm text-slate-700">
+            <table className="w-full min-w-[840px] text-left text-sm text-slate-700">
               <thead className="bg-[#f1ebe2] text-slate-700">
                 <tr>
                   <th className="px-3 py-2">Employee</th>
                   <th className="px-3 py-2">Employee ID</th>
+                  <th className="px-3 py-2">Size Split</th>
                   <th className="px-3 py-2 text-right">Quantity</th>
                   <th className="px-3 py-2">Distributed At</th>
                 </tr>
@@ -173,6 +184,7 @@ export function ClientDistributedInventory({ inventoryId }: ClientDistributedInv
                   <tr key={row.id} className="border-t border-[#e6ddd0]">
                     <td className="px-3 py-2">{row.employeeName}</td>
                     <td className="px-3 py-2">{row.employeeId || "-"}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{formatSizeQuantities(row.quantities) || "-"}</td>
                     <td className="px-3 py-2 text-right">{row.quantity}</td>
                     <td className="px-3 py-2">{new Date(row.createdAt).toLocaleString()}</td>
                   </tr>

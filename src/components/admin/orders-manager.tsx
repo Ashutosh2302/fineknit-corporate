@@ -1,7 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
+import {
+  fetchWithAuthRedirect,
+  UnauthorizedRequestError,
+} from "@/lib/fetch-with-auth-redirect";
+import {
+  emptySizeQuantities,
+  formatSizeQuantities,
+  hasPositiveSizeQuantity,
+  normalizeSizeQuantities,
+  SIZE_KEYS,
+  SIZE_LABELS,
+  sumSizeQuantities,
+  type SizeQuantities,
+} from "@/lib/size-quantities";
 
 type Client = {
   id: string;
@@ -20,6 +33,7 @@ type OrderRow = {
   createdAt?: string | null;
   invoiceUrl?: string;
   quantity: number;
+  quantities: SizeQuantities;
   sellingPrice: number;
   costPrice: number;
   delivered: boolean;
@@ -29,7 +43,7 @@ type OrderRow = {
 
 type OrderItemInput = {
   skuId: string;
-  quantity: number;
+  quantities: SizeQuantities;
   sellingPrice: number;
   costPrice: number;
 };
@@ -69,18 +83,33 @@ type PreviewAsset = {
 const inputClass =
   "w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
 
-const emptyItem = (): OrderItemInput => ({ skuId: "", quantity: 1, sellingPrice: 0, costPrice: 0 });
+const emptyItem = (): OrderItemInput => ({
+  skuId: "",
+  quantities: emptySizeQuantities(),
+  sellingPrice: 0,
+  costPrice: 0,
+});
 
-export function AdminOrdersManager({ initialClients, initialSkus, initialOrders }: Props) {
-  const [selectedClientId, setSelectedClientId] = useState(initialClients[0]?.id ?? "");
+export function AdminOrdersManager({
+  initialClients,
+  initialSkus,
+  initialOrders,
+}: Props) {
+  const [selectedClientId, setSelectedClientId] = useState(
+    initialClients[0]?.id ?? "",
+  );
   const [skus, setSkus] = useState<Sku[]>(initialSkus);
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
   const [status, setStatus] = useState("");
   const [loadingClientData, setLoadingClientData] = useState(false);
   const [creatingOrder, setCreatingOrder] = useState(false);
-  const [updatingOrderCode, setUpdatingOrderCode] = useState<string | null>(null);
+  const [updatingOrderCode, setUpdatingOrderCode] = useState<string | null>(
+    null,
+  );
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
-  const [deliveryDateByOrder, setDeliveryDateByOrder] = useState<Record<string, string>>({});
+  const [deliveryDateByOrder, setDeliveryDateByOrder] = useState<
+    Record<string, string>
+  >({});
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [previewAsset, setPreviewAsset] = useState<PreviewAsset | null>(null);
@@ -102,10 +131,27 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
     return [...map.entries()].map(([orderCode, items]) => {
       const delivered = items.every((item) => item.delivered);
       const createdAt = items[0]?.createdAt ?? null;
-      const invoiceUrl = items.find((item) => item.invoiceUrl)?.invoiceUrl ?? "";
-      const totalQuantity = items.reduce((acc, item) => acc + item.quantity, 0);
-      const totalSelling = items.reduce((acc, item) => acc + item.sellingPrice * item.quantity, 0);
-      const totalCost = items.reduce((acc, item) => acc + item.costPrice * item.quantity, 0);
+      const invoiceUrl =
+        items.find((item) => item.invoiceUrl)?.invoiceUrl ?? "";
+      const totalQuantity = items.reduce(
+        (acc, item) =>
+          acc + sumSizeQuantities(normalizeSizeQuantities(item.quantities)),
+        0,
+      );
+      const totalSelling = items.reduce(
+        (acc, item) =>
+          acc +
+          item.sellingPrice *
+            sumSizeQuantities(normalizeSizeQuantities(item.quantities)),
+        0,
+      );
+      const totalCost = items.reduce(
+        (acc, item) =>
+          acc +
+          item.costPrice *
+            sumSizeQuantities(normalizeSizeQuantities(item.quantities)),
+        0,
+      );
 
       const dateCandidates = items
         .map((item) => item.deliveryDate)
@@ -186,6 +232,16 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
       setCreatingOrder(false);
       return;
     }
+    if (
+      payload.items.some(
+        (item) =>
+          !hasPositiveSizeQuantity(normalizeSizeQuantities(item.quantities)),
+      )
+    ) {
+      setStatus("Please add at least one size quantity for each SKU line.");
+      setCreatingOrder(false);
+      return;
+    }
     try {
       let invoiceUrl = "";
       if (invoiceFile) {
@@ -193,10 +249,13 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
         const uploadFormData = new FormData();
         uploadFormData.append("folder", "invoices");
         uploadFormData.append("file", invoiceFile);
-        const uploadResponse = await fetchWithAuthRedirect("/api/admin/upload", {
-          method: "POST",
-          body: uploadFormData,
-        });
+        const uploadResponse = await fetchWithAuthRedirect(
+          "/api/admin/upload",
+          {
+            method: "POST",
+            body: uploadFormData,
+          },
+        );
         const uploadData = await uploadResponse.json();
         setUploadingInvoice(false);
 
@@ -214,8 +273,13 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
           clientId: selectedClientId,
           invoiceUrl,
           delivered: payload.delivered,
-          deliveryDate: payload.deliveryDate ? new Date(payload.deliveryDate).toISOString() : null,
-          items: payload.items,
+          deliveryDate: payload.deliveryDate
+            ? new Date(payload.deliveryDate).toISOString()
+            : null,
+          items: payload.items.map((item) => ({
+            ...item,
+            quantities: normalizeSizeQuantities(item.quantities),
+          })),
         }),
       });
 
@@ -238,10 +302,16 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
     }
   };
 
-  const updateOrderDelivery = async (orderCode: string, action: "deliver" | "undo") => {
+  const updateOrderDelivery = async (
+    orderCode: string,
+    action: "deliver" | "undo",
+  ) => {
     const enteredDeliveryDate = deliveryDateByOrder[orderCode];
     if (action === "deliver" && !enteredDeliveryDate) {
-      showToast("Please select delivery date before marking order as delivered.", "error");
+      showToast(
+        "Please select delivery date before marking order as delivered.",
+        "error",
+      );
       return;
     }
 
@@ -254,13 +324,18 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
           orderCode,
           action,
           deliveryDate:
-            action === "deliver" ? new Date(enteredDeliveryDate).toISOString() : undefined,
+            action === "deliver"
+              ? new Date(enteredDeliveryDate).toISOString()
+              : undefined,
         }),
       });
 
       const data = await response.json();
       if (!response.ok) {
-        showToast(data.error ?? "Failed to update order delivery status", "error");
+        showToast(
+          data.error ?? "Failed to update order delivery status",
+          "error",
+        );
         return;
       }
 
@@ -293,7 +368,11 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
               <p>{toast.message}</p>
               <button
                 type="button"
-                onClick={() => setToasts((prev) => prev.filter((item) => item.id !== toast.id))}
+                onClick={() =>
+                  setToasts((prev) =>
+                    prev.filter((item) => item.id !== toast.id),
+                  )
+                }
                 className="text-xs font-medium opacity-70 hover:opacity-100"
               >
                 Close
@@ -333,22 +412,33 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
         <form className="mt-4 space-y-4" onSubmit={createOrder}>
           <div className="grid gap-3 md:grid-cols-3">
             <div>
-              <label className="mb-1 block text-sm text-slate-700">Invoice File</label>
+              <label className="mb-1 block text-sm text-slate-700">
+                Invoice File
+              </label>
               <input
                 type="file"
                 accept=".pdf,image/*"
                 onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
                 className={inputClass}
               />
-              <p className="mt-1 text-xs text-slate-600">Upload invoice directly to S3 bucket.</p>
+              <p className="mt-1 text-xs text-slate-600">
+                Upload invoice directly to S3 bucket.
+              </p>
             </div>
 
             <div>
-              <label className="mb-1 block text-sm text-slate-700">Delivery Date</label>
+              <label className="mb-1 block text-sm text-slate-700">
+                Delivery Date
+              </label>
               <input
                 type="datetime-local"
                 value={payload.deliveryDate}
-                onChange={(e) => setPayload((prev) => ({ ...prev, deliveryDate: e.target.value }))}
+                onChange={(e) =>
+                  setPayload((prev) => ({
+                    ...prev,
+                    deliveryDate: e.target.value,
+                  }))
+                }
                 className={inputClass}
               />
             </div>
@@ -357,7 +447,12 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
               <input
                 type="checkbox"
                 checked={payload.delivered}
-                onChange={(e) => setPayload((prev) => ({ ...prev, delivered: e.target.checked }))}
+                onChange={(e) =>
+                  setPayload((prev) => ({
+                    ...prev,
+                    delivered: e.target.checked,
+                  }))
+                }
               />
               Mark order as delivered
             </label>
@@ -365,74 +460,127 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
 
           <div className="space-y-3">
             {payload.items.map((item, index) => (
-              <div key={index} className="grid gap-3 rounded-xl border border-[#ddd4c7] bg-[#faf8f4] p-3 md:grid-cols-4">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">SKU</label>
-                  <select
-                    required
-                    value={item.skuId}
-                    onChange={(e) => {
-                      const next = [...payload.items];
-                      next[index].skuId = e.target.value;
-                      setPayload((prev) => ({ ...prev, items: next }));
-                    }}
-                    className={inputClass}
-                  >
-                    <option value="">Choose SKU</option>
-                    {skus.map((sku) => (
-                      <option key={sku.id} value={sku.id}>
-                        {sku.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div
+                key={index}
+                className="space-y-3 rounded-xl border border-[#ddd4c7] bg-[#faf8f4] p-3"
+              >
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-600">
+                      SKU
+                    </label>
+                    <select
+                      required
+                      value={item.skuId}
+                      onChange={(e) => {
+                        const next = [...payload.items];
+                        next[index].skuId = e.target.value;
+                        setPayload((prev) => ({ ...prev, items: next }));
+                      }}
+                      className={inputClass}
+                    >
+                      <option value="">Choose SKU</option>
+                      {skus.map((sku) => (
+                        <option key={sku.id} value={sku.id}>
+                          {sku.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">Quantity</label>
-                  <input
-                    required
-                    min={1}
-                    type="number"
-                    value={item.quantity}
-                    onChange={(e) => {
-                      const next = [...payload.items];
-                      next[index].quantity = Number(e.target.value);
-                      setPayload((prev) => ({ ...prev, items: next }));
-                    }}
-                    className={inputClass}
-                  />
-                </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-600">
+                      Selling Price
+                    </label>
+                    <input
+                      required
+                      min={0}
+                      type="number"
+                      value={item.sellingPrice}
+                      onChange={(e) => {
+                        const next = [...payload.items];
+                        next[index].sellingPrice = Number(e.target.value);
+                        setPayload((prev) => ({ ...prev, items: next }));
+                      }}
+                      className={inputClass}
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-1 block text-xs text-slate-600">Selling Price</label>
-                  <input
-                    required
-                    min={0}
-                    type="number"
-                    value={item.sellingPrice}
-                    onChange={(e) => {
-                      const next = [...payload.items];
-                      next[index].sellingPrice = Number(e.target.value);
-                      setPayload((prev) => ({ ...prev, items: next }));
-                    }}
-                    className={inputClass}
-                  />
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-600">
+                      Cost Price
+                    </label>
+                    <input
+                      required
+                      min={0}
+                      type="number"
+                      value={item.costPrice}
+                      onChange={(e) => {
+                        const next = [...payload.items];
+                        next[index].costPrice = Number(e.target.value);
+                        setPayload((prev) => ({ ...prev, items: next }));
+                      }}
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
-
                 <div>
-                  <label className="mb-1 block text-xs text-slate-600">Cost Price</label>
-                  <input
-                    required
-                    min={0}
-                    type="number"
-                    value={item.costPrice}
-                    onChange={(e) => {
-                      const next = [...payload.items];
-                      next[index].costPrice = Number(e.target.value);
-                      setPayload((prev) => ({ ...prev, items: next }));
-                    }}
-                    className={inputClass}
-                  />
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="block text-xs text-slate-600">
+                      Size-wise quantity
+                    </label>
+                    <span className="text-xs text-slate-500">
+                      Total:{" "}
+                      {sumSizeQuantities(
+                        normalizeSizeQuantities(item.quantities),
+                      )}
+                    </span>
+                  </div>
+                  {(() => {
+                    const hasAnyStandardSize = SIZE_KEYS.some(
+                      (key) =>
+                        key !== "free_size" && (item.quantities[key] ?? 0) > 0,
+                    );
+                    return (
+                      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                        {SIZE_KEYS.map((sizeKey) => (
+                          <div key={sizeKey}>
+                            <label className="mb-1 block text-[11px] text-slate-600">
+                              {SIZE_LABELS[sizeKey]}
+                            </label>
+                            <input
+                              min={0}
+                              type="number"
+                              value={item.quantities[sizeKey]}
+                              disabled={
+                                sizeKey === "free_size" && hasAnyStandardSize
+                              }
+                              onChange={(e) => {
+                                const next = [...payload.items];
+                                const value = Number(e.target.value);
+                                const nextValue =
+                                  Number.isFinite(value) && value > 0
+                                    ? Math.floor(value)
+                                    : 0;
+                                next[index].quantities = {
+                                  ...next[index].quantities,
+                                  [sizeKey]: nextValue,
+                                  ...(sizeKey !== "free_size" && nextValue > 0
+                                    ? { free_size: 0 }
+                                    : {}),
+                                };
+                                setPayload((prev) => ({
+                                  ...prev,
+                                  items: next,
+                                }));
+                              }}
+                              className={inputClass}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
@@ -441,7 +589,12 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => setPayload((prev) => ({ ...prev, items: [...prev.items, emptyItem()] }))}
+              onClick={() =>
+                setPayload((prev) => ({
+                  ...prev,
+                  items: [...prev.items, emptyItem()],
+                }))
+              }
               disabled={creatingOrder || uploadingInvoice}
               className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-3 py-1.5 text-xs text-slate-700 hover:bg-[#f2ede5]"
             >
@@ -452,7 +605,10 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
               onClick={() =>
                 setPayload((prev) => ({
                   ...prev,
-                  items: prev.items.length > 1 ? prev.items.slice(0, -1) : prev.items,
+                  items:
+                    prev.items.length > 1
+                      ? prev.items.slice(0, -1)
+                      : prev.items,
                 }))
               }
               disabled={creatingOrder || uploadingInvoice}
@@ -464,19 +620,30 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
               disabled={creatingOrder || loadingClientData}
               className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {uploadingInvoice ? "Uploading Invoice..." : creatingOrder ? "Creating Order..." : "Create Order"}
+              {uploadingInvoice
+                ? "Uploading Invoice..."
+                : creatingOrder
+                  ? "Creating Order..."
+                  : "Create Order"}
             </button>
           </div>
         </form>
 
-        {status ? <p className="mt-3 text-sm text-slate-700">{status}</p> : null}
+        {status ? (
+          <p className="mt-3 text-sm text-slate-700">{status}</p>
+        ) : null}
       </section>
 
       <section className="rounded-2xl border border-[#e8e1d6] bg-[#f5f2ed] p-5">
-        <h2 className="text-lg font-semibold tracking-tight">Orders For Selected Client</h2>
+        <h2 className="text-lg font-semibold tracking-tight">
+          Orders For Selected Client
+        </h2>
         <div className="mt-4 space-y-5">
           {groupedOrders.map((order) => (
-            <div key={order.orderCode} className="rounded-xl border border-[#ddd4c7] bg-[#faf8f4] p-3">
+            <div
+              key={order.orderCode}
+              className="rounded-xl border border-[#ddd4c7] bg-[#faf8f4] p-3"
+            >
               <div className="overflow-auto rounded-lg border border-[#e6ddd0]">
                 <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-[#f1ebe2] text-slate-700">
@@ -495,15 +662,24 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                   </thead>
                   <tbody>
                     <tr className="border-t border-[#e6ddd0] text-slate-700">
-                      <td className="px-3 py-2 text-nowrap font-semibold text-slate-900">{order.orderCode}</td>
+                      <td className="px-3 py-2 text-nowrap font-semibold text-slate-900">
+                        {order.orderCode}
+                      </td>
                       <td className="px-3 py-2 text-nowrap font-medium">
-                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "-"}
+                        {order.createdAt
+                          ? new Date(order.createdAt).toLocaleDateString()
+                          : "-"}
                       </td>
                       <td className="px-3 py-2 text-nowrap">
                         {order.invoiceUrl ? (
                           <button
                             type="button"
-                            onClick={() => openPreview(order.invoiceUrl, `${order.orderCode} invoice`)}
+                            onClick={() =>
+                              openPreview(
+                                order.invoiceUrl,
+                                `${order.orderCode} invoice`,
+                              )
+                            }
                             className="text-xs underline"
                           >
                             View Invoice
@@ -512,14 +688,26 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                           "-"
                         )}
                       </td>
-                      <td className="px-3 py-2 text-nowrap font-semibold">{order.items.length}</td>
-                      <td className="px-3 py-2 text-nowrap font-semibold">{order.totalQuantity}</td>
-                      <td className="px-3 py-2 text-nowrap font-semibold">{order.totalSelling}</td>
-                      <td className="px-3 py-2 text-nowrap font-semibold">{order.totalCost}</td>
-                      <td className="px-3 py-2 text-nowrap">
-                        {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString() : "-"}
+                      <td className="px-3 py-2 text-nowrap font-semibold">
+                        {order.items.length}
                       </td>
-                      <td className="px-3 py-2 text-nowrap font-semibold">{order.delivered ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2 text-nowrap font-semibold">
+                        {order.totalQuantity}
+                      </td>
+                      <td className="px-3 py-2 text-nowrap font-semibold">
+                        {order.totalSelling}
+                      </td>
+                      <td className="px-3 py-2 text-nowrap font-semibold">
+                        {order.totalCost}
+                      </td>
+                      <td className="px-3 py-2 text-nowrap">
+                        {order.deliveryDate
+                          ? new Date(order.deliveryDate).toLocaleDateString()
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-2 text-nowrap font-semibold">
+                        {order.delivered ? "Yes" : "No"}
+                      </td>
                       <td className="px-3 py-2">
                         {!order.delivered ? (
                           <div className="flex min-w-[240px] items-center gap-2">
@@ -537,21 +725,29 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                             />
                             <button
                               type="button"
-                              onClick={() => updateOrderDelivery(order.orderCode, "deliver")}
+                              onClick={() =>
+                                updateOrderDelivery(order.orderCode, "deliver")
+                              }
                               disabled={updatingOrderCode === order.orderCode}
                               className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {updatingOrderCode === order.orderCode ? "Updating..." : "Mark Delivered"}
+                              {updatingOrderCode === order.orderCode
+                                ? "Updating..."
+                                : "Mark Delivered"}
                             </button>
                           </div>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => updateOrderDelivery(order.orderCode, "undo")}
+                            onClick={() =>
+                              updateOrderDelivery(order.orderCode, "undo")
+                            }
                             disabled={updatingOrderCode === order.orderCode}
                             className="rounded-lg border border-[#ddd4c7] bg-[#faf8f4] px-2 py-1 text-xs text-slate-700 hover:bg-[#f2ede5] disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {updatingOrderCode === order.orderCode ? "Updating..." : "Undo Delivered"}
+                            {updatingOrderCode === order.orderCode
+                              ? "Updating..."
+                              : "Undo Delivered"}
                           </button>
                         )}
                       </td>
@@ -587,9 +783,14 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                   </thead>
                   <tbody>
                     {order.items.map((item) => (
-                      <tr key={item._id} className="border-t border-[#e6ddd0] text-slate-700">
+                      <tr
+                        key={item._id}
+                        className="border-t border-[#e6ddd0] text-slate-700"
+                      >
                         <td className="px-2 py-1.5 align-top">
-                          <div className="truncate">{item.skuId?.name ?? "SKU"}</div>
+                          <div className="truncate">
+                            {item.skuId?.name ?? "SKU"}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5">
                           {item.skuId?.imageUrl ? (
@@ -603,7 +804,10 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                               <button
                                 type="button"
                                 onClick={() =>
-                                  openPreview(item.skuId?.imageUrl ?? "", `${item.skuId?.name ?? "SKU"} image`)
+                                  openPreview(
+                                    item.skuId?.imageUrl ?? "",
+                                    `${item.skuId?.name ?? "SKU"} image`,
+                                  )
                                 }
                                 className="truncate underline"
                               >
@@ -614,11 +818,36 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                             "-"
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-right">{item.quantity}</td>
-                        <td className="px-2 py-1.5 text-right">{item.sellingPrice}</td>
-                        <td className="px-2 py-1.5 text-right">{item.costPrice}</td>
-                        <td className="px-2 py-1.5 text-right">{item.sellingPrice * item.quantity}</td>
-                        <td className="px-2 py-1.5 text-right">{item.costPrice * item.quantity}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          <div>
+                            {sumSizeQuantities(
+                              normalizeSizeQuantities(item.quantities),
+                            )}
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-slate-500">
+                            {formatSizeQuantities(
+                              normalizeSizeQuantities(item.quantities),
+                            ) || "-"}
+                          </div>
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {item.sellingPrice}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {item.costPrice}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {item.sellingPrice *
+                            sumSizeQuantities(
+                              normalizeSizeQuantities(item.quantities),
+                            )}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {item.costPrice *
+                            sumSizeQuantities(
+                              normalizeSizeQuantities(item.quantities),
+                            )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -647,7 +876,9 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-800">{previewAsset.title}</p>
+              <p className="text-sm font-medium text-slate-800">
+                {previewAsset.title}
+              </p>
               <button
                 type="button"
                 onClick={() => setPreviewAsset(null)}
@@ -665,11 +896,20 @@ export function AdminOrdersManager({ initialClients, initialSkus, initialOrders 
                   className="mx-auto h-auto max-w-full rounded-lg"
                 />
               ) : previewAsset.type === "pdf" ? (
-                <iframe title={previewAsset.title} src={previewAsset.url} className="h-[70vh] w-full rounded-lg" />
+                <iframe
+                  title={previewAsset.title}
+                  src={previewAsset.url}
+                  className="h-[70vh] w-full rounded-lg"
+                />
               ) : (
                 <div className="p-4 text-sm text-slate-700">
                   Preview is not supported for this file type.{" "}
-                  <a href={previewAsset.url} target="_blank" rel="noreferrer" className="underline">
+                  <a
+                    href={previewAsset.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
                     Open file
                   </a>
                   .

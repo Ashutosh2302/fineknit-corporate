@@ -4,12 +4,25 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useClientToast } from "@/components/client-toast-provider";
 import { fetchWithAuthRedirect, UnauthorizedRequestError } from "@/lib/fetch-with-auth-redirect";
+import {
+  emptySizeQuantities,
+  formatSizeQuantities,
+  hasPositiveSizeQuantity,
+  normalizeSizeQuantities,
+  SIZE_KEYS,
+  SIZE_LABELS,
+  sumSizeQuantities,
+  type SizeQuantities,
+} from "@/lib/size-quantities";
 
 type InventoryRow = {
   id: string;
   totalQuantity: number;
   usedQuantity: number;
   availableQuantity: number;
+  totalQuantitiesBySize: SizeQuantities;
+  usedQuantitiesBySize: SizeQuantities;
+  availableQuantitiesBySize: SizeQuantities;
   sku: {
     name?: string;
     description?: string;
@@ -29,7 +42,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
     inventoryId: string;
     employeeName: string;
     employeeId: string;
-    quantity: number;
+    quantities: SizeQuantities;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { showToast } = useClientToast();
@@ -46,7 +59,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
 
   const distribute = async (
     inventoryId: string,
-    payload: { employeeName: string; employeeId: string; quantity: number }
+    payload: { employeeName: string; employeeId: string; quantities: SizeQuantities }
   ) => {
     setSubmittingInventoryId(inventoryId);
     try {
@@ -89,14 +102,14 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
       showToast({ message: "Please enter employee name before distributing.", type: "error" });
       return;
     }
-    if (!Number.isFinite(distributeModal.quantity) || distributeModal.quantity <= 0) {
-      showToast({ message: "Please enter a valid quantity.", type: "error" });
+    if (!hasPositiveSizeQuantity(normalizeSizeQuantities(distributeModal.quantities))) {
+      showToast({ message: "Please enter at least one size quantity.", type: "error" });
       return;
     }
     await distribute(distributeModal.inventoryId, {
       employeeName: distributeModal.employeeName.trim(),
       employeeId: distributeModal.employeeId.trim(),
-      quantity: distributeModal.quantity,
+      quantities: normalizeSizeQuantities(distributeModal.quantities),
     });
   };
 
@@ -128,6 +141,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
                 <th className="px-3 py-2 text-right">Total</th>
                 <th className="px-3 py-2 text-right">Used</th>
                 <th className="px-3 py-2 text-right">Available</th>
+                <th className="px-3 py-2">Size split</th>
                 <th className="px-3 py-2 text-right">Action</th>
               </tr>
             </thead>
@@ -173,6 +187,9 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
                   <td className="px-3 py-2 text-right">{row.totalQuantity}</td>
                   <td className="px-3 py-2 text-right">{row.usedQuantity}</td>
                   <td className="px-3 py-2 text-right font-medium">{row.availableQuantity}</td>
+                  <td className="px-3 py-2 text-xs text-slate-600">
+                    {formatSizeQuantities(normalizeSizeQuantities(row.availableQuantitiesBySize)) || "-"}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-2">
                       <Link
@@ -188,7 +205,7 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
                             inventoryId: row.id,
                             employeeName: "",
                             employeeId: "",
-                            quantity: 1,
+                            quantities: emptySizeQuantities(),
                           })
                         }
                         className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
@@ -261,6 +278,14 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
                 {inventory.find((item) => item.id === distributeModal.inventoryId)?.sku?.name ?? "SKU"}
               </span>
             </p>
+            <p className="mt-1 text-xs text-slate-600">
+              Available by size:{" "}
+              {formatSizeQuantities(
+                normalizeSizeQuantities(
+                  inventory.find((item) => item.id === distributeModal.inventoryId)?.availableQuantitiesBySize
+                )
+              ) || "-"}
+            </p>
 
             <div className="mt-4 space-y-3">
               <input
@@ -281,17 +306,49 @@ export function ClientInventory({ initialInventory }: ClientInventoryProps) {
                 }
                 className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
               />
-              <input
-                type="number"
-                min={1}
-                value={distributeModal.quantity}
-                onChange={(event) =>
-                  setDistributeModal((prev) =>
-                    prev ? { ...prev, quantity: Number(event.target.value) } : prev
-                  )
-                }
-                className="w-full rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] px-3 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
+              <div className="rounded-xl border border-[#ddd4c7] bg-[#fcfbf8] p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-medium text-slate-600">Size-wise quantity</p>
+                  <p className="text-xs text-slate-500">
+                    Total: {sumSizeQuantities(normalizeSizeQuantities(distributeModal.quantities))}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {SIZE_KEYS.map((sizeKey) => (
+                    <div key={sizeKey}>
+                      <label className="mb-1 block text-[11px] text-slate-600">
+                        {SIZE_LABELS[sizeKey]}
+                        <span className="ml-1 text-slate-500">
+                          (
+                          {inventory.find((item) => item.id === distributeModal.inventoryId)?.availableQuantitiesBySize[
+                            sizeKey
+                          ] ?? 0}
+                          )
+                        </span>
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={distributeModal.quantities[sizeKey]}
+                        onChange={(event) =>
+                          setDistributeModal((prev) => {
+                            if (!prev) return prev;
+                            const value = Number(event.target.value);
+                            return {
+                              ...prev,
+                              quantities: {
+                                ...prev.quantities,
+                                [sizeKey]: Number.isFinite(value) && value > 0 ? Math.floor(value) : 0,
+                              },
+                            };
+                          })
+                        }
+                        className="w-full rounded-lg border border-[#ddd4c7] bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 flex items-center justify-end gap-2">

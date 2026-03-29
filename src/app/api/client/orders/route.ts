@@ -3,6 +3,11 @@ import { connectToDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/api-auth";
 import { ClientOrderModel } from "@/models/ClientOrder";
 import "@/models/ClientSku";
+import {
+  hasPositiveSizeQuantity,
+  normalizeSizeQuantities,
+  sumSizeQuantities,
+} from "@/lib/size-quantities";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -22,7 +27,19 @@ export async function GET(request: NextRequest) {
     .lean();
 
   return NextResponse.json(
-    { orders: rows },
+    {
+      orders: rows.map((row) => {
+        const quantities = normalizeSizeQuantities(row.quantities);
+        if (!hasPositiveSizeQuantity(quantities) && row.quantity > 0) {
+          quantities.free_size = row.quantity;
+        }
+        return {
+          ...row,
+          quantities,
+          quantity: sumSizeQuantities(quantities),
+        };
+      }),
+    },
     {
       headers: {
         "Cache-Control": "no-store, max-age=0",

@@ -5,6 +5,12 @@ import { requireRole } from "@/lib/api-auth";
 import { InventoryModel } from "@/models/Inventory";
 import { UsedInventoryModel } from "@/models/UsedInventory";
 import "@/models/ClientSku";
+import {
+  hasPositiveSizeQuantity,
+  normalizeSizeQuantities,
+  subtractSizeQuantities,
+  sumSizeQuantities,
+} from "@/lib/size-quantities";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,14 +37,25 @@ export async function GET(
   }
 
   const rows = await UsedInventoryModel.find({ inventoryId }).sort({ createdAt: -1 }).lean();
+  const total = normalizeSizeQuantities(inventory.totalQuantities);
+  const used = normalizeSizeQuantities(inventory.usedQuantities);
+  if (!hasPositiveSizeQuantity(total) && inventory.totalQuantity > 0) {
+    total.free_size = inventory.totalQuantity;
+  }
+  if (!hasPositiveSizeQuantity(used) && inventory.usedQuantity > 0) {
+    used.free_size = inventory.usedQuantity;
+  }
 
   return NextResponse.json(
     {
       inventory: {
         id: inventory._id,
-        totalQuantity: inventory.totalQuantity,
-        usedQuantity: inventory.usedQuantity,
-        availableQuantity: inventory.totalQuantity - inventory.usedQuantity,
+        totalQuantity: sumSizeQuantities(total),
+        usedQuantity: sumSizeQuantities(used),
+        availableQuantity: sumSizeQuantities(total) - sumSizeQuantities(used),
+        totalQuantitiesBySize: total,
+        usedQuantitiesBySize: used,
+        availableQuantitiesBySize: subtractSizeQuantities(total, used),
         sku: inventory.skuId,
       },
       distributed: rows.map((row) => ({
@@ -46,6 +63,13 @@ export async function GET(
         employeeName: row.employeeName,
         employeeId: row.employeeId,
         quantity: row.quantity,
+        quantities: (() => {
+          const quantities = normalizeSizeQuantities(row.quantities);
+          if (!hasPositiveSizeQuantity(quantities) && row.quantity > 0) {
+            quantities.free_size = row.quantity;
+          }
+          return quantities;
+        })(),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),

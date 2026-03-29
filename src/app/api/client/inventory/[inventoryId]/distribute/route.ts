@@ -5,12 +5,46 @@ import { connectToDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/api-auth";
 import { InventoryModel } from "@/models/Inventory";
 import { UsedInventoryModel } from "@/models/UsedInventory";
+import {
+  addSizeQuantities,
+  hasPositiveSizeQuantity,
+  normalizeSizeQuantities,
+  SIZE_KEYS,
+  subtractSizeQuantities,
+  sumSizeQuantities,
+} from "@/lib/size-quantities";
+
+const sizeQuantitiesInputSchema = z.object({
+  s: z.number().int().nonnegative().optional(),
+  m: z.number().int().nonnegative().optional(),
+  l: z.number().int().nonnegative().optional(),
+  xl: z.number().int().nonnegative().optional(),
+  xxl: z.number().int().nonnegative().optional(),
+  free_size: z.number().int().nonnegative().optional(),
+});
 
 const schema = z.object({
   employeeName: z.string().trim().min(1),
   employeeId: z.string().trim().optional().default(""),
-  quantity: z.number().int().positive(),
+  quantities: sizeQuantitiesInputSchema,
 });
+
+function normalizeInventoryMaps(inventory: {
+  totalQuantities?: Record<string, number>;
+  usedQuantities?: Record<string, number>;
+  totalQuantity?: number;
+  usedQuantity?: number;
+}) {
+  const total = normalizeSizeQuantities(inventory.totalQuantities);
+  const used = normalizeSizeQuantities(inventory.usedQuantities);
+  if (!hasPositiveSizeQuantity(total) && (inventory.totalQuantity ?? 0) > 0) {
+    total.free_size = inventory.totalQuantity ?? 0;
+  }
+  if (!hasPositiveSizeQuantity(used) && (inventory.usedQuantity ?? 0) > 0) {
+    used.free_size = inventory.usedQuantity ?? 0;
+  }
+  return { total, used };
+}
 
 export async function POST(
   request: NextRequest,
@@ -26,6 +60,11 @@ export async function POST(
 
   try {
     const payload = schema.parse(await request.json());
+    const requestedQuantities = normalizeSizeQuantities(payload.quantities);
+    if (!hasPositiveSizeQuantity(requestedQuantities)) {
+      return NextResponse.json({ error: "Please enter at least one size quantity." }, { status: 400 });
+    }
+
     await connectToDatabase();
 
     const inventory = await InventoryModel.findOne({ _id: inventoryId, clientId: auth.sub });
@@ -33,21 +72,33 @@ export async function POST(
       return NextResponse.json({ error: "Inventory not found" }, { status: 404 });
     }
 
-    const available = inventory.totalQuantity - inventory.usedQuantity;
-    if (payload.quantity > available) {
-      return NextResponse.json({ error: "Insufficient available inventory" }, { status: 400 });
+    const { total, used } = normalizeInventoryMaps(inventory);
+    const availableBySize = subtractSizeQuantities(total, used);
+    for (const key of SIZE_KEYS) {
+      if (requestedQuantities[key] > availableBySize[key]) {
+        return NextResponse.json(
+          { error: "Insufficient available inventory for selected size quantities." },
+          { status: 400 }
+        );
+      }
     }
 
-    inventory.usedQuantity += payload.quantity;
+    const nextUsed = addSizeQuantities(used, requestedQuantities);
+    inventory.totalQuantities = total;
+    inventory.usedQuantities = nextUsed;
+    inventory.totalQuantity = sumSizeQuantities(total);
+    inventory.usedQuantity = sumSizeQuantities(nextUsed);
     await inventory.save();
 
     const usage = await UsedInventoryModel.create({
       inventoryId: inventory._id,
       employeeName: payload.employeeName,
       employeeId: payload.employeeId,
-      quantity: payload.quantity,
+      quantities: requestedQuantities,
+      quantity: sumSizeQuantities(requestedQuantities),
     });
 
+    const remainingBySize = subtractSizeQuantities(total, nextUsed);
     return NextResponse.json(
       {
         usedInventory: usage,
@@ -56,6 +107,9 @@ export async function POST(
           totalQuantity: inventory.totalQuantity,
           usedQuantity: inventory.usedQuantity,
           availableQuantity: inventory.totalQuantity - inventory.usedQuantity,
+          totalQuantitiesBySize: total,
+          usedQuantitiesBySize: nextUsed,
+          availableQuantitiesBySize: remainingBySize,
         },
       },
       { status: 201 }

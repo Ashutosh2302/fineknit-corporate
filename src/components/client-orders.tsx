@@ -1,12 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  formatSizeQuantities,
+  normalizeSizeQuantities,
+  sumSizeQuantities,
+  type SizeQuantities,
+} from "@/lib/size-quantities";
 
 type OrderLine = {
   _id: string;
   orderCode: string;
   invoiceUrl?: string;
   quantity: number;
+  quantities: SizeQuantities;
   sellingPrice: number;
   costPrice: number;
   deliveryDate?: string;
@@ -35,9 +42,15 @@ export function ClientOrders({ initialOrders }: ClientOrdersProps) {
       map.set(row.orderCode, existing);
     }
     return [...map.entries()].map(([orderCode, rows]) => {
-      const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
-      const totalSelling = rows.reduce((sum, row) => sum + row.sellingPrice * row.quantity, 0);
-      const totalCost = rows.reduce((sum, row) => sum + row.costPrice * row.quantity, 0);
+      const totalQty = rows.reduce((sum, row) => sum + sumSizeQuantities(normalizeSizeQuantities(row.quantities)), 0);
+      const totalSelling = rows.reduce(
+        (sum, row) => sum + row.sellingPrice * sumSizeQuantities(normalizeSizeQuantities(row.quantities)),
+        0
+      );
+      const totalCost = rows.reduce(
+        (sum, row) => sum + row.costPrice * sumSizeQuantities(normalizeSizeQuantities(row.quantities)),
+        0
+      );
       const deliveryDate = rows.find((row) => row.deliveryDate)?.deliveryDate;
       const invoiceUrl = rows.find((row) => row.invoiceUrl)?.invoiceUrl;
       return {
@@ -173,18 +186,20 @@ export function ClientOrders({ initialOrders }: ClientOrdersProps) {
                 <colgroup>
                   <col className="w-[34%]" />
                   <col className="w-[16%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[6%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[16%]" />
                 </colgroup>
                 <thead className="bg-[#f1ebe2] text-slate-700">
                   <tr>
                     <th className="px-3 py-2">SKU</th>
                     <th className="px-3 py-2">Image</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2">Size Qty</th>
                     <th className="px-3 py-2 text-right">Sell</th>
                     <th className="px-3 py-2 text-right">Cost</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
                     <th className="px-3 py-2 text-right">Line Sell</th>
                   </tr>
                 </thead>
@@ -214,10 +229,15 @@ export function ClientOrders({ initialOrders }: ClientOrdersProps) {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-right">{row.quantity}</td>
+                      <td className="px-3 py-2 text-xs text-slate-600">
+                        {formatSizeQuantities(normalizeSizeQuantities(row.quantities)) || "-"}
+                      </td>
                       <td className="px-3 py-2 text-right">{row.sellingPrice}</td>
                       <td className="px-3 py-2 text-right">{row.costPrice}</td>
-                      <td className="px-3 py-2 text-right">{row.sellingPrice * row.quantity}</td>
+                      <td className="px-3 py-2 text-right">{sumSizeQuantities(normalizeSizeQuantities(row.quantities))}</td>
+                      <td className="px-3 py-2 text-right">
+                        {row.sellingPrice * sumSizeQuantities(normalizeSizeQuantities(row.quantities))}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
